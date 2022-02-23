@@ -42,3 +42,6 @@ issue special instructions:
     jump into OS: 
         target: trap handlers
     save register state (so as to enable resume execution later).
+
+Os sys call handler: runs
+    => ret-from-trap (opposite of about)
