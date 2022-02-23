@@ -147,7 +147,7 @@ Details concerned about store between hardware and software should be taken into
 4. high degree of reliability: run a long time.
 5. energy-efficiency, security, mobility, etc...
 
-
+main idea: takes physical resources, such as a CPU, memory or disk and virtualizes them. Handles tough and tricky issues related to concurrency, stores file persistently.
 ## Histroy:
 
 ### Libraries: batch processing.-----> file system(system call)
@@ -171,4 +171,3 @@ e.g.: Unix or Unix-like systems.
 
 PC
 
-so on.
