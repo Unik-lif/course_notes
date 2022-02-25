@@ -171,3 +171,71 @@ e.g.: Unix or Unix-like systems.
 
 PC
 
+## Processes
+process ensence: running program->process.
+
+to implement virtualization of the CPU, the os will need both low-level machinery and some high-level intelligence.
+
+low-level mechanism: e.g. context switch.
+### abstraction:
+what constitutes a process, we should understand the machine state.
+1. memory.
+2. registers.
+3. I/O devices.
+
+policy -> high-level, mechanism -> low-level.
+
+we'd better separate them, use modularity more. this is a general software design principle.
+
+for process, 5 instructions of OS should be considered.
+1. create
+2. destroy
+3. wait
+4. miscellaneous control
+5. status
+
+### process creation:
+load programs initially reside on disk onto memory, allocating address for them.
+
+other work should be done by OS:
+1. run-time stack (set up for local variable, function parameters, and return addresses).
+2. heap: for dynamically-allocated data (function malloc() free())
+3. I/O work: Unix file descriptors
+PS: this process is done lazily now, not load until when be used at once. (due to paging and swapping).
+### process states:
+```
+         descheduled
+  running -------------> ready
+     \    <------------- /
+      \      scheduled  /
+       \               /
+I/O init\             / I/O done
+            blocked 
+```
+in fact, besides these three states, in some system like Unix, we also get initial state and final state.
+
+the final state is aka zombie state.
+
+for processlist, it contains info about all processes in the system. Each entry is found in what is sometimes called a process control block (PCB). It is just a structure that contains info about a specific process.
+
+### HW:
+#### q1:
+100 % CPU utilization. because I/O is not involved.
+#### q2:
+5 + I/O time.
+#### q3:
+1 + Max(4, I/O time).
+
+in fact, it counts.
+#### q4:
+5 + I/O time
+#### q5:
+same as q3.
+#### q6:
+run all cpu processes out, then I/O process.
+#### q7:
+act like insert.
+
+cause every time io will take a lot of time.
+#### q8:
+random result.
