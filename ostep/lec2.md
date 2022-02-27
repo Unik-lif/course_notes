@@ -53,3 +53,5 @@ User processes: how to manage them? Use process Lists!
 #### process list
 per-process info: => state: ready, running, blocked(on I/O)
 ### how can we level up mechanisms to Policies?
+
+ok
