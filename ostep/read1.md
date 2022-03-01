@@ -239,3 +239,13 @@ act like insert.
 cause every time io will take a lot of time.
 #### q8:
 random result.
+
+### API code work
+Done.
+
+## Charpter 6
+virtualize the CPU is based on a very simple idea: run one process for a while, then run another one, and so forth. This is AKA time sharing.
+
+Two problems should be solved before we adapt virtualization:
+1. performance
+2. control
