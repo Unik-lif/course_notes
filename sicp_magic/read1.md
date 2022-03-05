@@ -145,6 +145,62 @@ iterative
 ; (A 3 3) -> (A 2 (A 3 2)) -> (A 2 (A 2 (A 3 1))) -> (A 2 (A 2 2)) -> (A 2 4) -> 2 ** 16
 (define (f n) (A 0 n)); this is equal to 2 * n
 (define (g n) (A 1 n)); this is equal to 2 ** n
-(define (h n) (A 2 n)); this is equal to 2 ** (A 2 (- n 1))
+(define (h n) (A 2 n)); this is equal to 2 ** (A 2 (- n 1)) 
 (define (k n) (* 5 n n)); this is equal to 5 * (n ** 2)
 ```
+### counting change:
+How many different ways can we make change of $1.00, given half-dollars, quarters, dimes, nickels, and pennies?
+
+The numbers of ways to change amount a using n kinds of conis equals: the number of ways to change amount a using all but the first kind of coin, plus the number of ways to change amount a - d using all n kinds of coins where d is the denomination of the first kind of coin.
+```scheme
+(define (count-change amount)
+    (cc amount 5))
+(define (cc amount kinds-of-coins)
+    (cond ((= amount 0) 1)
+          ((or (< amount 0) (= kinds-of-coins 0)) 0)
+          (else (+ (cc amount
+                        (- kinds-of-coins 1))
+                   (cc (- amount
+                          (first-denomination kinds-of-coins))
+                        kinds-of-coins)))))
+(define (first-denomination kinds-of-coins)
+    (cond ((= kinds-of-coins 1) 1)
+          ((= kinds-of-coins 2) 5)
+          ((= kinds-of-coins 3) 10)
+          ((= kinds-of-coins 4) 25)
+          ((= kinds-of-coins 5) 50)))
+```
+tree-recursion is very easy to specify, but not efficient, which has led people to design a smart compiler that could transform tree-recursive procedures into more efficient procedures that compute the same result.
+
+One approach to coping with redundent computations is to store something we already seen before. This strategy, aka tabulation or memoization, can be implemented in a straightforward way.
+### ex1.11
+```scheme
+(define (f n)
+    (if (> n 2)
+        (f-rec 0 1 2 n)
+        n
+    )
+)
+(define (f-rec a b c n)
+    (if (= n 2)
+        c
+        (f-rec b c (+ c (* 2 b) (* 3 a)) (- n 1))
+    )
+)
+```
+### ex1.12
+```scheme
+; we assume that the depth and pos follow the rules.
+(define (pascal depth pos)
+    (if (or (= pos 0) (= pos depth))
+        1
+        (+ (pascal (- depth 1) (- pos 1)) (pascal (- depth 1) pos))
+    )
+)
+```
+### ex1.13
+this is a fairly easy question.
+
+remember: (1 + sqrt(5)) / 2 and (1 - sqrt(5)) / 2 is the root of x ^ 2 - x - 1 = 0. So we can use this to compute higher n.
+
+and the recursion bases is given that fib(0), fib(1) happens to be what we want. So long as the power of (1 - sqrt(5)) / 2 is going up, the fibonacci number is getting closer and closer.
