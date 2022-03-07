@@ -270,3 +270,20 @@ b. Space: O(log N) Steps: O(log N)
 )
 ```
 ### ex1.19
+```scheme
+by simple calculation, we get p = p ^ 2 + q ^ 2. q = 2 * p * q + q ^ 2.
+```
+this exercise give us a way to think logarithmically.
+
+### GCD
+lame's Theorem:
+```
+(a_k, b_k) -> (a_k-1, b_k-1)
+for k = 1, b_0 >= 1 = Fib(1).
+then by recursion, we can easily prove that, b_k >= Fib(k).
+```
+Demo:
+```
+let n be the smaller of the two inputs to the procedure, if the process takes k steps, then we must have n >= Fib(k).
+Hence, the order of Euclid algorithm growth is O(log N).
+```
