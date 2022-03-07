@@ -204,3 +204,69 @@ this is a fairly easy question.
 remember: (1 + sqrt(5)) / 2 and (1 - sqrt(5)) / 2 is the root of x ^ 2 - x - 1 = 0. So we can use this to compute higher n.
 
 and the recursion bases is given that fib(0), fib(1) happens to be what we want. So long as the power of (1 - sqrt(5)) / 2 is going up, the fibonacci number is getting closer and closer.
+### ex1.14
+```
+(11, 3) -> 10 + (1, 3) -> (10 + 1)
+        -> (11, 2) -> 5 + (6, 2) -> 5 + 5 + (1, 2) -> (5 + 5 + 1)
+                                 -> 5 + (6, 1) -> (5 + 6 * 1)
+                   -> (11, 1) -> (11 * 1)
+```
+### ex1.15
+```
+a. 5 times
+b. Space: O(log N) Steps: O(log N)
+```
+### ex1.16
+```scheme
+(define (fast-expt b n tmp count)
+    (cond ((= n 0) 1)
+          ((= count 0) tmp)
+          ((even? count) (fast-expt b n (square tmp) (/ count 2)))
+          (else (fast-expt b n (* b tmp) (- count 1)))
+    )
+)
+
+(define (even? n)
+    (= (remainder n 2) 0)
+)
+
+(define (square x)
+    (* x x)
+)
+
+(define (fast b n)
+    (fast-expt b n 1 n)
+)
+```
+### ex1.17
+```scheme
+(define (* a b)
+    (cond ((= b 0) 0)
+          ((even? b) (+ (* a (/ b 2)) (* a (/ b 2))))
+          (else (+ a (* a (- b 1))))
+    )
+)
+
+(define (even? n)
+    (= (remainder n 2) 0)
+)
+```
+### ex1.18
+```scheme
+(define (* a b tmp count)
+    (cond ((= b 0) 0)
+          ((= count 0) tmp)
+          ((even? count) (* a b (+ tmp tmp) (/ count 2)))
+          (else (* a b (+ tmp a) (- count 1)))
+    )
+)
+
+(define (even? n)
+    (= (remainder n 2) 0)
+)
+
+(define (multi a b)
+    (* a b 0 b)
+)
+```
+### ex1.19
