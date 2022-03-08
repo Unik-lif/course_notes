@@ -287,3 +287,50 @@ Demo:
 let n be the smaller of the two inputs to the procedure, if the process takes k steps, then we must have n >= Fib(k).
 Hence, the order of Euclid algorithm growth is O(log N).
 ```
+### ex1.20
+```
+lets do this step by step:
+(206, 40) -> (40, 6) -> (6, 4) -> (4, 2) -> (2, 0): return 2.
+so we get 4 steps to get the result.
+```
+### Testing for primality:
+Fermat's Little Theorem.
+```
+if n is a prime number and a is any positive integer less than n, then a raised to n_th power is congruent to a modulo n.
+```
+some code can be shown like below:
+```scheme
+(define (expmod base exp m)
+    (cond ((= exp 0) 1)
+          ((even? exp)
+           (remainder (square (expmod base (/ exp 2) m)) m))
+          (else
+           (remainder (* base (expmod base (- exp 1) m) m)))
+    )
+)
+
+;random returns a nonnegative integer less than its integer input.
+(define (fermat-test n)
+    (define (try-it a)
+        (= (expmod a n n) a)
+    )
+    (try-it (+ 1 (random (- n 1))))
+)
+
+(define (fast-prime? n times)
+    (cond ((= times 0) true)
+          ((fermat-test n) (fast-prime? n (- times 1)))
+          (else false)
+    )
+)
+```
+### ex1.21
+```
+(199, 2) -> (199, 3) -> (199, 4) -> (199, 5) -> (199, 6) -> (199, 7) .... -> (199, 14): 199.
+(1999, 1) ... -> 1999
+(19999, 1) ... -> 7
+```
+### ex1.22
+```scheme
+
+```
