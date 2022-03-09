@@ -249,3 +249,22 @@ virtualize the CPU is based on a very simple idea: run one process for a while, 
 Two problems should be solved before we adapt virtualization:
 1. performance
 2. control
+### basic Technique: limited direct execution
+direct execution: just run the program directly on the CPU.
+
+what OS and Program do is shown below:
+```
+OS                                             Program
+-----------------------------------------------------------------
+create entry for process list
+allocate memory for program
+load program into memory
+set up stack with argc/argv
+clear registers
+execute call main()
+                                        run main()
+                                        execute return from main
+free memory of process
+remove from process list
+```
+if we just run a program, how can the OS make sure the program doesn't do anything that we don't want it to do.
