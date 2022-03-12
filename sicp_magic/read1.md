@@ -330,7 +330,128 @@ some code can be shown like below:
 (1999, 1) ... -> 1999
 (19999, 1) ... -> 7
 ```
-### ex1.22
+### ex1.22 & ex1.23
 ```scheme
+(define (timed-prime-test n)
+    (newline)
+    (display n)
+    (start-prime-test n (runtime))
+)
+(define (start-prime-test n start-time)
+    (if (prime? n)
+        (report-prime (- (runtime) start-time))
+    )
+)
+(define (report-prime elapsed-time)
+    (display "***")
+    (display elapsed-time)
+)
 
+(define (smallest-divisor n)
+    (find-divisor n 2)
+)
+(define (find-divisor n test-divisor)
+    (cond ((> (square test-divisor) n) n)
+          ((divides? test-divisor n) test-divisor)
+          (else (find-divisor n (+ test-divisor 1)))
+    )
+)
+(define (square n) (* n n))
+(define (divides? a b)
+    (= (remainder b a) 0)
+)
+(define (prime? n)
+    (= n (smallest-divisor n))
+)
+
+(define (search-for-primes start-point)
+    (if (prime? start-point)
+        (timed-prime-test start-point)
+        (search-for-primes (+ 2 start-point))
+    )
+)
+(search-for-primes 1001)
+(search-for-primes 10001)
+(search-for-primes 100001)
+(search-for-primes 1000001)
+(search-for-primes 10000001)
 ```
+result is shown below: basically it in accord with what we expected.
+```
+1009***4
+10007***4
+100003***29
+1000003***43
+10000019***129
+
+the change will definely count only a little when change steps to 2. But it only counts a little.(resources and many other stuff)
+I don't want to do this in fact.
+```
+### ex1.24
+```scheme
+(define (timed-prime-test n)
+    (newline)
+    (display n)
+    (start-prime-test n (runtime))
+)
+(define (start-prime-test n start-time)
+    (if (fast-prime? n 5)
+        (report-prime (- (runtime) start-time))
+    )
+)
+(define (report-prime elapsed-time)
+    (display "***")
+    (display elapsed-time)
+)
+(define (square x) (* x x))
+(define (fast-prime? n times)
+    (cond ((= times 0) true)
+          ((fermat-test n) (fast-prime? n (- times 1)))
+          (else false)
+    )
+)
+(define (fermat-test n)
+    (define (try-it a)
+        (= (expmod a n n) a))
+    (try-it (+ 1 (random (- n 1))))
+)
+(define (expmod base exp m)
+    (cond ((= exp 0) 1)
+          ((even? exp) (remainder (square (expmod base (/ exp 2) m)) m))
+          (else (remainder (* base (expmod base (- exp 1) m)) m))
+    )
+)
+(define (search-for-primes start-point)
+    (if (fast-prime? start-point 5)
+        (timed-prime-test start-point)
+        (search-for-primes (+ 2 start-point))
+    )
+)
+```
+yes, it's aparently more quickly.
+```result
+1009***9
+10007***8
+100003***9
+1000003***10
+10000019***12
+```
+but has more danger.
+### ex1.25
+It serves right, but much more slowly.
+### ex1.26
+the example code is given below:
+```scheme
+(define (expmod base exp m)
+    (cond ((= exp 0) 1)
+          ((even? exp) (remainder (* (expmod base (/ exp 2) m) (expmod base (/ exp 2) m)) m))
+          (else (remainder (* base (expmod base (- exp 1) m))))
+    )
+)
+```
+It is fairly easy.
+
+The given example in SICP 2e compute (expmod base (/ exp 2) m) only once, the procedure then store it value, and use square. The recursion looks like this:
+$$O(N) = O(N / 2) + 1 = O(log N)$$
+while the other looks like this:
+$$O(N) = 2O(N/2) = O(N)$$
