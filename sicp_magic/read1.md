@@ -455,3 +455,68 @@ The given example in SICP 2e compute (expmod base (/ exp 2) m) only once, the pr
 $$O(N) = O(N / 2) + 1 = O(log N)$$
 while the other looks like this:
 $$O(N) = 2O(N/2) = O(N)$$
+### ex1.27
+```scheme
+(define (expmod base exp m)
+  (cond ((= 0 exp) 1)
+        ((even? exp) (remainder (square (expmod base (/ exp 2) m)) m))
+        (else (remainder (* base (expmod base (- exp 1) m)) m))
+  )
+)
+(define (square x) (* x x))
+(define (full-test base m)
+  (if (= (expmod base m m) base)
+      #t
+      #f
+   )
+ )
+(define (whole-test base m)
+  (if (= m base)
+      #t
+      (if (full-test base m)
+          (whole-test (+ 1 base) m)
+          #f
+          )
+      )
+  )
+
+(whole-test 2 561)
+(whole-test 2 1105)
+(whole-test 2 1729)
+(whole-test 2 2465)
+(whole-test 2 2821)
+(whole-test 2 6601)
+```
+result is shown below:
+```
+#t
+#t
+#t
+#t
+#t
+#t
+```
+### ex1.28
+I'll check Miller Rabin procedure when I get enough time.
+```scheme
+;take a single change in expmod with miller-rabin procedure, the result is more precise now.
+(define (expmod base exp m)
+  (cond ((= 0 exp) 1)
+        ((even? exp)
+         (if (= 1 (remainder (square (expmod base (/ exp 2) m)) m))
+             0
+             (remainder (square (expmod base (/ exp 2) m)) m)
+          ))
+        (else (remainder (* base (expmod base (- exp 1) m)) m))
+  )
+)
+```
+result:
+```
+#f
+#f
+#f
+#f
+#f
+#f
+```
