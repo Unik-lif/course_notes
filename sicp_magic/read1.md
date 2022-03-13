@@ -520,3 +520,5 @@ result:
 #f
 #f
 ```
+## Appendix Miller-Rabin & Fermat little Theory:
+(remains to be added).
