@@ -63,3 +63,35 @@ drRacket has round over this simply to 1/4:
 1/4
 1/4
 ```
+### ex1.30
+marked here, we can use iter for sum operation.
+```scheme
+(define (sum term a next b)
+    (define (iter a result)
+        (if (= a b)
+            result
+            (iter (next a) (+ result (term a)))
+        )
+    )
+    (iter a 0)
+)
+```
+### ex1.31
+```scheme
+;part a:
+(define (next x)
+    (+ x 2)
+)
+(define (term x)
+    x
+)
+(define (factorial a b)
+    (if (= a b)
+        1
+        (* (term a) (factorial (next a) b))
+    )
+)
+(define (pi_4 n)
+    (/ (factorial 2 (* n 2)) (factorial 3 (+ (* n 2 ) 1)))
+)
+```
