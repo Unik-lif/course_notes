@@ -79,19 +79,44 @@ marked here, we can use iter for sum operation.
 ### ex1.31
 ```scheme
 ;part a:
-(define (next x)
-    (+ x 2)
-)
-(define (term x)
-    x
-)
-(define (factorial a b)
-    (if (= a b)
-        1
-        (* (term a) (factorial (next a) b))
+;denote factorial:
+(define (factorial start end)
+    (if (= start end)
+        start
+        (* start (factorial (+ start 1) end))
     )
 )
-(define (pi_4 n)
-    (/ (factorial 2 (* n 2)) (factorial 3 (+ (* n 2 ) 1)))
+;denote PI4
+(define (next n count)
+    (if (even? count)
+        n
+        (+ 2 n)
+    )
+)
+(define (product start n count result)
+    (if (= n 0)
+        1
+        (if (= count n)
+            (* start result)
+            (product (next start count) n (+ 1 count) (* start result))
+        )
+    )
+)
+(define (pi4 n)   
+    (/ (product 2 n 1 1) (product 3 (+ n 1) 2 1))
+)
+
+;change product into recursive version
+(define (product_plus start n count)
+    (if (= n 0)
+        1
+        (if (= count n)
+            start
+            (* start (product_plus (next start count) n (+ 1 count)))
+        )
+   )
+)
+(define (pi4 n)
+    (/ (product_plus 2 n 1) (product_plus 3 (+ n 1) 2))
 )
 ```
