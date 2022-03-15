@@ -120,3 +120,75 @@ marked here, we can use iter for sum operation.
     (/ (product_plus 2 n 1) (product_plus 3 (+ n 1) 2))
 )
 ```
+### ex1.32
+```scheme
+(define (accumulate combiner null-value term a next b)
+    (if (= a b)
+        null-value
+        (combiner (term a) (combiner null-value term (next a) next b))
+    )
+)
+
+(define (product term a next b)
+    (accumulate * (term a) term a next b)
+)
+(define (sum term a next b)
+    (accumulate + (term a) term a next b)
+)
+
+(define (accumulate combiner null-value term a next b result)
+    (if (= a b)
+        (combiner (term a) result)
+        (accumulate combiner null-value term (next a) next b (combiner (term a) result))
+    )
+)
+```
+### ex1.33
+I prefer to use iteration, so `null-value` is useless here, but for some reasons I still keep them here. You can simply delete null-value to lower the space complexity.
+```scheme
+(define (filtered-accumulate condition? combiner null-value term a next b result)
+    (if (= a b)
+        (if (condition? a)
+            (combiner (term a) result)
+            result
+        )
+        (if (condition? a)
+            (filtered-accumulate condition? combiner null-value term (next a) next b (combiner (term a) result))
+            (filtered-accumulate condition? combiner null-value term (next a) next b result)
+        )
+    )
+)
+(define (square a) (* a a))
+(define (prime? a)
+    (define (prime-test test a)
+        (if (> (square test) a)
+            #t
+            (if (divides? test a)
+                #f
+                (prime-test (+ 1 test) a)
+            )
+        )
+    )
+    (prime-test 2 a)
+)
+(define (divides? a b)
+    (= (remainder b a) 0)
+)
+(define (identity x) x)
+(define (next a) (+ 1 a))
+;because term only has one parameter, we have to know the n value beforehand. assume the n is 20.
+(define (gcd a b)
+    (if (= b 0)
+        a
+        (gcd b (remainder a b))
+    )
+)
+(define (test? a)
+    (if (= 1 (gcd 20 a))
+        #t
+        #f
+    )
+)
+(filtered-accumulate prime? + 0 identity 2 next 10 0)
+(filtered-accumulate test? * 1 identity 1 next 20 1)
+```
