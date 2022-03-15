@@ -192,3 +192,33 @@ I prefer to use iteration, so `null-value` is useless here, but for some reasons
 (filtered-accumulate prime? + 0 identity 2 next 10 0)
 (filtered-accumulate test? * 1 identity 1 next 20 1)
 ```
+### 1.3.2
+To avoid ineffiency in naming, we use lambda as anonymous function.
+
+```scheme
+(lambda (x) (+ x 4))
+(lambda (x) (/ 1.0 (* x (+ x 2))))
+```
+below is a good example:
+```scheme
+(define (f x y)
+    ((lambda (a b) (+ (* x (square a)) (*y b) (* a b))) (+ 1 (* x y)) (- 1 y))
+)
+;we can use let to omit more things.
+
+(define (f x y)
+    (let ((a (+ 1 (* x y)))) (b (-1 y))); a, b is denoted as parameters.
+    (+ (* x (square a)) (* y b) (* a b))
+)
+;the general form is shown below
+(let (<var1> <exp1>)
+     (<var2> <exp2>)
+     ...............
+     (<varn> <expn>)
+<body>)
+```
+
+### ex.1.34
+lack parameters for the procedure, exit with error.
+
+### 1.3.3
