@@ -222,3 +222,92 @@ below is a good example:
 lack parameters for the procedure, exit with error.
 
 ### 1.3.3
+Try to get rid of particular functions involved, use general methods for finding zeros and fixed points of functions.
+
+```scheme
+(define (search f neg-point pos-point)
+    (let ((midpoint (average neg-point pos-point)))
+        (if (close-enough? neg-point pos-point)
+            midpoint
+            (let ((test-value (f midpoint)))
+                (cond ((positive? test-value) (search f neg-point midpoint))
+                      ((negative? test-value) (search f midpoint pos-point))
+                      (else midpoint)
+                )
+            )
+        )
+    )
+)
+(define (close-enough? x y)
+    (< (abs (- x y)) 0.001)
+)
+(define (half-interval-method f a b)
+    (let ((a-value (f a)) 
+          (b-value (f b)))
+          
+        (cond ((and (negative? a-value) (positive? b-value)) (search f a b))
+              ((and (negarive? b-value) (positive? a-value)) (search f a b))
+              (else (error "values are not of opposite sign" a b))
+        )
+    )
+)
+```
+a number x is called a fixed point of a function f if x satisfies the equations: $f(x) = x$.
+```scheme
+(define tolerance 0.00001)
+
+(define (fixed-point f first-guess)
+    (define (close-enough? v1 v2)
+        (< (abs (- v1 v2)) tolerance)
+    )
+    (define (try guess)
+        (let ((next (f guess)))
+            (if (close-enough? guess next)
+                next
+                (try next)
+            )
+        )
+    )
+    (try first-guess)
+)
+```
+but not all the function can use this function, the oscillations might be a little big, then the changing rate is too high, for example: $f(x) = y / x$.
+```scheme
+;instead, we use 1/2 * (y + x / y). This is a better way to find fixed point.
+(define (sqrt x)
+    (fixed-point (lambda (y) (average y (/ x y))) 1.0)
+)
+```
+### ex1.35:
+```scheme
+(fixed-point (lambda (y) (+ 1 (/ 1 y))) 1.0)
+```
+### ex1.36
+```scheme
+(define (fixed-point f first-guess)
+    (define (close-enough? v1 v2)
+        (< (abs (- v1 v2)) tolerance)
+    )
+    (define (try guess)
+        (newline)
+        (let ((next (f guess)))
+            (if (close-enough? guess next)
+                (display next)
+                (try next)
+            )
+        )
+    )
+    (try first-guess)
+)
+(define (average a b) (/ 2 (+ a b)))
+(fixed-point (lambda (y) (/ (log 1000) (log y))) 10.0)
+(fixed-point (lambda (y) (average (/ (log 1000) (log y)) y)) 10.0)
+```
+result
+```
+(33 newline)
+4.555532257016376
+(8 newline)
+4.555536206185039
+```
+### ex1.37
