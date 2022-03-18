@@ -311,3 +311,47 @@ result
 4.555536206185039
 ```
 ### ex1.37
+```scheme
+(define (cont-frac Ni Di k)
+    (define (cont-frac-end begin)
+        (if (= begin k)
+            (/ (Ni k) (Di k))
+            (/ (Ni begin) (+ (cont-frac-end (+ begin 1)) (Di begin)))
+        )
+    )
+    (cont-frac-end 1)
+)
+(define (close-enough? a b)
+  (< (abs (- a b)) 0.0001)
+  )
+(define (test k)
+    (if (close-enough? 0.6180339887498949 (cont-frac (lambda (i) 1.0) (lambda (i) 1.0) k))
+        (display k)
+        (test (+ k 1))
+    )
+)
+(test 4)
+```
+result
+```
+9
+```
+We can do this iteratively.
+```scheme
+;remains to be seen
+```
+### ex1.38
+```scheme
+(cont-frac (lambda (i) 1.0) 
+(lambda (i)
+    (if (= (remainder i 3) 2)
+        (* (/ (+ 1 i) 3) 2)
+        1
+    )
+)
+10000)
+```
+the result is shown below:
+```
+0.7182818284590453
+```
