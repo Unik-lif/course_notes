@@ -54,5 +54,14 @@ how to write a more general sum_up program?
 ;Newton method
 ;to find a y such that f(y) = 0, start with a guess y_{0}, iterate y_{n + 1} & y_{n}
 ;use wishful thinking as a habbit.
+;please refer read2.md
 
 ```
+## End
+The rights and privileges of first-class citizens:
+1. To be named by variables
+2. To be passed as arguments to procedures.
+3. To be returned as values of procedures
+4. To be incorporated into data structures.
+
+

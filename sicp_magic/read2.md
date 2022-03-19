@@ -417,6 +417,97 @@ Since each iteration doubles the number-of-digits accuracy, this is much more ra
 (define dx 0.00001)
 (define (cube x) (* x x x))
 ((deriv cube) 5)
-(define (newtown-transform g guess)
+(define (newtown-transform g)
+    (lambda (x)
+        (- x (/ (g x) ((deriv g) x)))
+    )
+)
+(define (newtons-method g guess)
+    (fixed-point (newton-transform g) guess)
+)
+(define (sqrt x)
+    (newtons-method (lambda (y) (- (square y) x)) 1.0)
+)
+;Two ways of transform, we can pack it.
+(define (fixed-point-of-transform g transform guess)
+    (fixed-point (transform g) guess)
+)
+(define (sqrt x)
+    (fixed-point-of-transform (lambda (y) (/ x y)) average-damp 1.0)
+)
+(define (sqrt x)
+    (fixed-point-of-transform (lambda (y) (- (square y) x)) newton-transform 1.0)
 )
 ```
+### ex1.40
+```scheme
+(define dx 0.00001)
+(define (deriv g)
+    (lambda (x)
+        (/ (- (g (+ x dx)) (g x)) dx)
+    )
+)
+(define (fixed-point f first-guess)
+    (define (close-enough? a b)
+        (< (abs (- a b)) 0.0001)
+    )
+    (define (try guess)
+        (let ((next (f guess)))
+            (if (close-enough? guess next)
+                next
+                (try next)
+            )
+        )
+    )
+    (try first-guess)
+)
+(define (newtons-transform g)
+    (lambda (x)
+        (- x (/ (g x) ((deriv g) x)))
+    )
+)
+(define (newtons-method g guess)
+    (fixed-point (newtons-transform g) guess)
+)
+(define (cubic a b c)
+    (lambda (x)
+        (+ (* x x x) (* a (* x x)) (* b x) c)
+    )
+)
+(newtons-method (cubic 2 -3 0) -9)
+(newtons-method (cubic 2 -3 0) 4)
+```
+
+### ex1.41
+```scheme
+(define (double f)
+    (lambda (x)
+        (f (f x))
+    )
+)
+```
+I predict it to be 21, and it proves I am right.
+### ex1.42
+```scheme
+(define (compose f g)
+    (lambda (x)
+        (f (g x))
+    )
+)
+((compose (lambda (x) (* x x)) (lambda (x) (+ 1 x))) 6)
+```
+### ex1.43
+```scheme
+(define (repeated f n)
+    (lambda (x)
+        (if (= 1 n)
+            (f x)
+            ((repeated f (- n 1)) (f x))
+        )
+    )
+)
+((repeated (lambda (x) (* x x)) 2) 5)
+```
+Instead of Compose, we can use recursion or iteration to solve this problem.
+
+### ex1.44
