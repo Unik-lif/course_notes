@@ -339,6 +339,16 @@ result
 We can do this iteratively.
 ```scheme
 ;remains to be seen
+(define (cont-frac-1 Ni Di k)
+    (define (cont-frac-end-1 begin result)
+        (if (= begin k)
+            result
+            (cont-frac-end-1 (+ begin 1) (/ (Ni (- k begin)) (+ result (Di (- k begin)))))
+        )
+    )
+    (cont-frac-end-1 1 (/ (Ni k) (Di k)))
+)
+;the generate methods in iteration and recursion is different.
 ```
 ### ex1.38
 ```scheme
@@ -354,4 +364,26 @@ We can do this iteratively.
 the result is shown below:
 ```
 0.7182818284590453
+```
+### ex1.39
+```scheme
+(define (tan-cf x k)
+    (cont-frac 
+        (lambda (i)
+            (if (= 1 i)
+                (* -1 x)
+                (* (* -1 x) x)
+            )
+        )
+        (lambda (i)
+            (* -1 (- (* 2 i) 1))
+        )
+        k
+    )
+)
+```
+the result is shown below:
+```
+if we use 1.0 as the starting point, the result is:
+1.557407724654902
 ```
