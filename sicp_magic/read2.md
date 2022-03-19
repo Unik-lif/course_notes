@@ -387,3 +387,36 @@ the result is shown below:
 if we use 1.0 as the starting point, the result is:
 1.557407724654902
 ```
+
+### 1.3.4
+we can express the idea of average damping by means of the following procedure:
+```scheme
+(define (average-damp f)
+    (lambda (x) (average x (f x)))
+)
+;use the method, we can reformulate the square-root procedure as follows:
+(define (sqrt x)
+    (fixed-point (average-damp (lambda (y) (/ x y))) 1.0)
+)
+(define (cube-root x)
+    (fixed-point (average-damp (lambda (y) (/ x (square y)))) 1.0)
+)
+```
+Newton's Method: the use of the fixed-point method.
+$$ f(x_{k} + t) = f(x_{k}) + f'(x_{k})t + \frac{1}{2} f''(x_k)t^2$$
+To get the value of t, we use diffrentiate method for t:
+$$ 0 = f'(x_k)t + \frac{1}{2} f''(x_k)t^2$$
+$$t=-\frac{f'(x_k)}{f''(x_k)}$$
+Since each iteration doubles the number-of-digits accuracy, this is much more rapidly than the half-interval method.
+```scheme
+(define (deriv g)
+    (lambda (x)
+        (/ (- (g (+ x dx)) (g x)) dx)
+    )
+)
+(define dx 0.00001)
+(define (cube x) (* x x x))
+((deriv cube) 5)
+(define (newtown-transform g guess)
+)
+```
