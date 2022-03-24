@@ -19,3 +19,8 @@ THe use of compound data leads to a real increase in the expressive power of our
 One key idea in dealing with compound data is the notion of closure - that the glue we use for combining data objects should allow us to combine not only primitive data objects, but compound data objects as well.
 
 ## 2.1
+Data abstraction is to structure the programs that are to use compound data objects so that they operate on "abstract data".
+
+### "Wishful thinking"
+We haven't yet said how a rational number is represented, or how the procedures numer, denom, and make-rat should be implemented.
+
