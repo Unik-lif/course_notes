@@ -167,3 +167,77 @@ The data-abstraction methodology gives us a way to defer that decision without l
 ;for rectangles, you basically got two ways to construct this, basically 3 points or 2 segments.
 ;if you use 2 segments in two ways to construct your target, then It will work very well, otherwise not.
 ```
+### 2.1.3
+Abstract models: procedures plus conditions, by Hoare.
+
+Procedures: an abstract algbraic system whose behavior is specified by axioms that correspond to our conditions.
+
+we can use procedures to represent data structures.
+```scheme
+(define (cons x y)
+    (define (dispatch m)
+        (cond ((= m 0) x)
+              ((= m 1) y)
+              (else (error "Argument not 0 or 1 - CONS" m))
+        )
+    )
+)
+(define (car z) (z 0))
+(define (cdr z) (z 1))
+```
+### ex2.4
+```scheme
+(define (cons x y)
+    (lambda (m) 
+        (m x y)
+    )
+)
+(define (car z)
+    (z (lambda (p q) p))
+)
+;((cons x y) (lambda (p q) p))
+;((lambda (p q) p) x y)
+;x
+(define (cdr z)
+    (z (lambda (p q) q))
+)
+```
+### ex2.5
+if $2^{a1}3^{b1} = 2^{a2}3^{b2}$, then $a_1 = a_2, b_1 = b_2$.
+```scheme
+(define (power a x)
+    (if (= 0 x)
+        1
+        (* a (power a (- x 1)))
+    )
+)
+(define (cons a b)
+    (* (power 2 a) (power 3 b))
+)
+(define (car con)
+    (define (count con num)
+        (if (= (remainder con 2) 0)
+            (count (/ con 2) (+ 1 num))
+            num
+        )
+    )
+    (count con 0)
+)
+(define (cdr con)
+    (define (count con num)
+        (if (= (remainder con 3) 0)
+            (count (/ con 3) (+ 1 num))
+            num
+        )
+    )
+    (count con 0)
+)
+```
+### ex2.6
+```scheme
+(define one (lambda (f) (lambda (x) (f x))))
+(define two (lambda (f) (lambda (x) (f (f x)))))
+(define (+ a b)
+    (lambda (f) (lambda (x) ((b f) ((a f) x))))
+)
+```
