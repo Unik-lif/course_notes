@@ -241,3 +241,36 @@ if $2^{a1}3^{b1} = 2^{a2}3^{b2}$, then $a_1 = a_2, b_1 = b_2$.
     (lambda (f) (lambda (x) ((b f) ((a f) x))))
 )
 ```
+### ex2.7
+```scheme
+(define (make-interval a b)
+    (cons a b)
+)
+(define (upper-bound interval)
+    (cdr interval)
+)
+(define (lower-bound interval)
+    (car interval)
+)
+```
+### ex2.8
+```scheme
+(define (sub-interval x y)
+    (make-interval (- (lower-bound x) (upper-bound y))
+                   (- (upper-bound x) (lower-bound y))
+    )
+)
+```
+### ex2.9
+too easy.
+### ex2.10
+```scheme
+;the former div-interval
+(define (div-interval x y)
+    (mul-interval x
+        (make-interval (/ 1.0 (upper-bound y))
+                       (/ 1.0 (lower-bound y))
+        )
+    )
+)
+```
