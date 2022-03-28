@@ -265,12 +265,14 @@ if $2^{a1}3^{b1} = 2^{a2}3^{b2}$, then $a_1 = a_2, b_1 = b_2$.
 too easy.
 ### ex2.10
 ```scheme
-;the former div-interval
 (define (div-interval x y)
-    (mul-interval x
-        (make-interval (/ 1.0 (upper-bound y))
-                       (/ 1.0 (lower-bound y))
+    (if (> (* (upper-bound y) (lower-bound)) 0)
+        (mul-interval x
+            (make-interval (/ 1.0 (upper-bound y))
+                           (/ 1.0 (lower-bound y))
+            )
         )
+        (error "spans 0")
     )
 )
 ```
