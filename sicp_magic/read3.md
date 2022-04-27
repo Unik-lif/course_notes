@@ -266,7 +266,7 @@ too easy.
 ### ex2.10
 ```scheme
 (define (div-interval x y)
-    (if (> (* (upper-bound y) (lower-bound)) 0)
+    (if (> (* (upper-bound y) (lower-bound y)) 0)
         (mul-interval x
             (make-interval (/ 1.0 (upper-bound y))
                            (/ 1.0 (lower-bound y))
@@ -275,4 +275,213 @@ too easy.
         (error "spans 0")
     )
 )
+```
+### ex2.11
+```scheme
+(define (mul-interval x y)
+    ; (let ((p1 (* (lower-bound x) (lower-bound y)))
+    ;      (p2 (* (lower-bound x) (upper-bound y)))
+    ;      (p3 (* (upper-bound x) (lower-bound y)))
+    ;      (p4 (* (upper-bound x) (upper-bound y))))
+    ; (make-interval (min p1 p2 p3 p4) (max p1 p2 p3 p4)))
+   
+    (let ((+? positive?)
+          (-? negative?)
+          (lx (lower-bound x))
+          (ux (upper-bound x))
+          (ly (lower-bound y))
+          (uy (upper-bound y)))
+         (cond ((test-sign +? +? +? +? x y)
+                (make-interval (* lx ly) (* ux uy)))
+               ((test-sign +? +? -? +? x y)
+                (make-interval (* ux ly) (* ux uy)))
+               ((test-sign +? +? -? -? x y)
+                (make-interval (* ux ly) (* lx uy)))
+               ((test-sign -? +? +? +? x y)
+                (make-interval (* lx uy) (* ux uy)))
+               ((test-sign -? +? -? +? x y)
+                (let ((p1 (* lx ly))
+                      (p2 (* lx uy))
+                      (p3 (* ux ly))
+                      (p4 (* ux uy)))
+                     (make-interval (min p2 p3) (max p1 p4))
+                ))
+               ((test-sign -? +? -? -? x y)
+                (make-interval (* ux ly) (* lx ly)))
+               ((test-sign -? -? +? +? x y)
+                (make-interval (* lx uy) (* ux ly)))
+               ((test-sign -? -? -? +? x y)
+                (make-interval (* lx uy) (* lx ly)))
+               ((test-sign -? -? -? -? x y)
+                (make-interval (* ux uy) (* lx ly)))
+         )
+    )
+)
+
+  
+ (define (test-sign lx-test ux-test ly-test uy-test x y) 
+   (and (lx-test (lower-bound x)) 
+        (ux-test (upper-bound x)) 
+        (ly-test (lower-bound y)) 
+        (uy-test (upper-bound y)))) 
+(define a (make-interval -1.0 2.0))
+(define b (make-interval 1.0 5.0))
+(mul-interval a b)
+```
+### ex2.12
+```scheme
+(define (make-center-percent center tolerance)
+    (make-interval (- center (* tolerance center)) (+ center (* tolerance center)))
+)
+(define (center x)
+    (/ (+ (lower-bound x) (upper-bound x)) 2)
+)
+(define (percent x)
+    (/ (- (upper-bound x) (lower-bound x)) (+ (lower-bound x) (upper-bound x)))
+)
+```
+### ex2.13
+```scheme
+; Use leibnitz's way to compute your results.
+; Assume all numbers are positive.
+(define (mul-percent x y)
+    (+ (percent x) (percent y))
+)
+```
+### ex2.14
+We simply do a test
+```scheme
+(define a (make-center-percent 10 0.002))
+(define b (make-center-percent 10 0.005))
+(define (par1 r1 r2)
+    (div-interval (mul-interval r1 r2) (add-interval r1 r2))
+)
+(define (par2 r1 r2)
+    (let ((one (make-interval 1 1)))
+        (div-interval one (add-interval (div-interval one r1) (div-interval one r2)))
+    )
+)
+(par1 a b)
+(par2 a b)
+```
+The result is shown below:
+```
+(4.94773293472845 . 5.052734570998496)
+(4.982488710486704 . 5.017488789237668)
+```
+### ex2.15
+She is right.
+### ex2.16
+Every usage of uncertainty will be accumulate in the end. But you always got a way in the middle-time to remove\mitigate the uncertainty. Do it like digital circuit.
+
+The math explanation might be easier to understand when you use differential equations to represent it.
+
+## 2.2
+Not all language have built-in general-purpose glue that makes it easy to manipulate compound data in a uniform way.
+
+### List operations
+```scheme
+; find the n_th number.
+(define (list-ref item n)
+    (if (= n 0)
+        (car item)
+        (list-ref (cdr item) (- n 1))
+    )
+)
+;find the length of the list
+(define (length item)
+    (if (null? item)
+        0
+        (+ 1 (length (cdr item)))
+    )
+)
+(define (length_v2 item)
+    (define (length-iter a count)
+        (if (null? a)
+            count
+            (length-iter (cdr a) (+ 1 count))
+        )
+    )
+    (length-iter item 0)
+)
+(define squares (list 1 4 9 16 25))
+(define (append list1 list2)
+    (if (null? list1)
+        list2
+        (cons (car list1) (append (cdr list1) list2))
+    )
+)
+;usage of the functions
+(list-ref squares 3)
+(length squares)
+(length_v2 squares)
+```
+
+### ex2.17
+```scheme
+(define (last-pair list)
+    (if (nil? (cdr list))
+        list
+        (last-pair (cdr list))
+    )
+)
+```
+### ex2.18
+```scheme
+(define (reverse list)
+    (if (= nil (cdr list))
+        list
+        (append (reverse (cdr list)) (car list))
+    )
+)
+```
+### ex2.19
+```scheme
+<!-- (define (cc amount coin-values)
+    (cond ((= amount 0) 1)
+          ((or (< amount 0) (no-more? coin-values)) 0)
+          (else
+            (+ (cc amount
+                (except-first-denomination coin-values)
+            )
+               (cc (- amount (first-denomination coin-values)) coin-values)
+            )
+          )
+    )
+) -->
+(define (first-denomination coin-values)
+    (car coin-values)
+)
+(define (except-first-denomination coin-values)
+    (cdr coin-values)
+)
+```
+This won't change the results.
+### ex2.20
+```scheme
+; dot definition
+; (define (f x y . z) <body>)
+; (f 1 2 3 4 5 6)
+; x: 1
+; y: 2
+; z: (3 4 5 6)
+(define (same-parity . w)
+    (define (length list)
+        (if (null? list)
+            0
+            (+ 1 (length (cdr list)))
+        )
+    )
+    (define (select-one counter input output len)
+        (if (= counter len)
+            output
+            (if (= 0 (remainder counter 2))
+                (select-one (+ 1 counter) (cdr input) (append output (list (car input))) len)
+                (select-one (+ 1 counter) (cdr input) output len)
+            )
+        )
+    )
+    (select-one 0 w nil (length w))
+)
+(same-parity 1 2 3 4 5 6 7)
 ```
