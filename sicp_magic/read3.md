@@ -428,10 +428,10 @@ Not all language have built-in general-purpose glue that makes it easy to manipu
 ```
 ### ex2.18
 ```scheme
-(define (reverse list)
-    (if (= nil (cdr list))
-        list
-        (append (reverse (cdr list)) (car list))
+(define (reverse item)
+    (if (null? (cdr item))
+        item
+        (append (reverse (cdr item)) (list (car item)))
     )
 )
 ```
@@ -484,4 +484,113 @@ This won't change the results.
     (select-one 0 w nil (length w))
 )
 (same-parity 1 2 3 4 5 6 7)
+```
+### Mapping over the Lists
+```scheme
+(define (map proc items)
+    (if (null? items)
+        nil
+        (cons (proc (car items))
+            (map proc (cdr items)))
+    )
+)
+```
+scheme has a more general form of map.
+### ex2.21
+```scheme
+; first way
+(define (square-list items)
+    (if (null? items)
+        nil
+        (cons (* (car items) (car items)) (square-list (cdr items)))
+    )
+)
+; second way
+(define (square-list items)
+    (map * items items)
+)
+```
+### ex2.22
+a). This is because your 'answer' starts from nil.
+
+b). the 'answer' is a list, not an element. use 'append' with 'list' to fix it.
+```scheme
+(define (square x) (* x x))
+(define (square-list items)
+    (define (iter things answer)
+        (if (null? things)
+            answer
+            (iter (cdr things) (append answer (list (square (car things)))))
+        )
+    )
+    (iter items nil)
+)
+```
+### ex2.23
+```scheme
+(define (for-each proc list)
+    (define (pack proc list) (proc (car list)) (for-each proc (cdr list)))
+    (if (null? list)
+        #t
+        (pack proc list)
+    )
+)
+```
+
+### 2.2.2
+find the total leaves.
+```scheme
+(define (count-leaves x)
+    (cond ((null? x) 0)
+          ((not (pair? x)) 1)
+          (else (+ (count-leaves (car x)) (count-leaves (cdr x))))
+    )
+)
+```
+### ex2.24
+(1 (2 (3 4)))
+### ex2.25
+```scheme
+(define a (list 1 3 (list 5 7) 9))
+(cdr (car (cdr (cdr a))))
+(define b (list (list 7)))
+(car (car b))
+(define c (list 1 (list 2 (list 3 (list 4 (list 5 (list 6 7)))))))
+(car (cdr (car (cdr (car (cdr (car (cdr (car (cdr (car (cdr c))))))))))))
+```
+### ex2.26
+```scheme
+(1 2 3 4 5 6)
+((1 2 3) 4 5 6)
+((1 2 3) (4 5 6))
+```
+### ex2.27
+```scheme
+(define (reverse item)
+    (if (null? (cdr item))
+        item
+        (append (reverse (cdr item)) (list (car item)))
+    )
+)
+(define (deep-reverse item)
+    (if (null? item)
+        nil
+        (if (not (pair? item))
+            item
+            (append (deep-reverse (cdr item)) (list (deep-reverse (car item)))) 
+        )
+    )
+)
+```
+### ex2.28
+```scheme
+(define (fringe item)
+    (if (null? item)
+        nil
+        (if (not (pair? item))
+            (list item)
+            (append (fringe (car item)) (fringe (cdr item)))
+        )
+    )
+)
 ```
