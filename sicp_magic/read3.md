@@ -594,3 +594,193 @@ find the total leaves.
     )
 )
 ```
+### ex2.29
+```scheme
+(define (make-mobile left right)
+    (list left right)
+)
+(define (make-branch length structure)
+    (list length structure)
+)
+; a
+(define (left-branch mobile)
+    (car mobile)
+)
+(define (right-branch mobile)
+    (cadr mobile)
+)
+(define (branch-length branch)
+    (car branch)
+)
+(define (branch-structure branch)
+    (cadr branch)
+)
+; b
+(define (total-weight mobile)
+    (define (branch-temp branch)
+        (if (not (pair? (branch-structure branch)))
+            (branch-structure branch)
+            (+ (branch-temp (left-branch (branch-structure branch))) (branch-temp (right-branch (branch-structure branch))))
+        )
+    )
+    (+ (branch-temp (left-branch mobile)) (branch-temp (right-branch mobile)))
+)
+(define a (make-branch 10 20))
+(define b (make-branch 10 30))
+(define c (make-mobile a b))
+(define d (make-branch 10 c))
+(define e (make-mobile d b))
+(total-weight e) ;test passed
+; c
+(define (l-length mobile)
+    (branch-length (left-branch mobile))
+)
+(define (l-structure mobile)
+    (branch-structure (left-branch mobile))
+)
+(define (r-length mobile)
+    (branch-length (right-branch mobile))
+)
+(define (r-structure mobile)
+    (branch-structure (right-branch mobile))
+)
+(define (is-mobile? structure)
+    (if (pair? structure)
+        #t; is mobile
+        #f; is weight
+    )
+)
+(define (balanced-mobile mobile)
+    (cond ((and (not (is-mobile? (l-structure mobile))) (not (is-mobile? (r-structure mobile))))
+            (and (= (* (l-length mobile) (l-structure mobile)) (* (r-length mobile) (r-structure mobile)))))
+          ((and (not (is-mobile? (l-structure mobile))) (is-mobile? (r-structure mobile)))
+            (and (= (* (l-length mobile) (l-structure mobile)) (* (r-length mobile) (total-weight (r-structure mobile)))) (balanced-mobile (r-structure mobile))))
+          ((and (is-mobile? (l-structure mobile)) (not (is-mobile? (r-structure mobile))))
+            (and (= (* (l-length mobile) (total-weight (l-structure mobile))) (* (r-length mobile) (r-structure mobile))) (balanced-mobile (l-structure mobile))))
+          ((and (is-mobile? (l-structure mobile)) (is-mobile? (r-structure mobile)))
+            (and (= (* (l-length mobile) (total-weight (l-structure mobile))) (* (r-length mobile) (total-weight (r-structure mobile)))) (balanced-mobile (l-structure mobile)) (balanced-mobile (r-structure))))    
+    )
+)
+; d
+; if I want to change the representations of mobiles:
+; I only should change cadr to cdr, nothing left.
+```
+### mapping over trees
+```scheme
+(define (scale-tree tree factor)
+    (cond ((null? tree) nil)
+          ((not (pair? tree) (* tree factor)))
+          (else (cons (scale-tree (car tree) factor) (scale-tree (cdr tree) factor)))
+    )
+)
+; another way to build scale-tree is to regard it as many combinations of the sub-tree.
+(define (scale-tree tree factor)
+    (map (lambda (sub-tree) 
+         (if (pair? sub-tree)
+            (scale-tree sub-tree factor)
+            (* sub-tree factor)
+         )) tree)
+)
+```
+### ex2.30
+```scheme
+(define (square x) (* x x))
+(define (square-tree tree)
+    (cond ((null? tree) nil)
+          ((not (pair? tree)) (square tree))
+          (else (cons (square-tree (car tree)) (square-tree (cdr tree))))
+    )
+)
+(define (square-tre tree)
+    (map (lambda (sub-tree)
+         (if (pair? sub-tree)
+             (square-tre sub-tree)
+             (square sub-tree)
+         )
+         ) tree)
+)
+(define a (list 1 (list 2 (list 3 4) 5) (list 6 7)))
+(square-tree a)
+(square-tre a)
+```
+### ex2.31
+```scheme
+(define (tree-map proc tree)
+    (cond ((null? tree) nil)
+          ((not (pair? tree)) (proc tree))
+          (else (cons (tree-map proc (car tree)) (tree-map proc (cdr tree))))
+    )
+)
+```
+### ex2.32
+```scheme
+(define (subsets s)
+    (if (null? s)
+        (list nil)
+        (let ((rest (subsets (cdr s))))
+            (append rest (map (lambda (entry) (append entry (list (car s)))) rest))
+        )
+    )
+)
+(subsets (list 1 2 3 4))
+```
+
+### 2.2.3
+concentrate on the "signals".
+```scheme
+(define (filter predicate sequence)
+    (cond ((null? sequence) nil)
+          ((predicate (car sequence)) (cons (car sequence) (filter predicate (cdr sequence))))
+          (else (filter predicate (cdr sequence)))
+    )
+)
+(define (accumulate op initial sequence)
+    (if (null? sequence)
+        initial
+        (op (car sequence) (accumulate op initial (cdr sequence)))
+    )
+)
+(define (enumerate-interval low high)
+    (if (> low high)
+        nil
+        (cons low (enumerate-interval (+ low 1) high))
+    )
+)
+;use these functions to build other complicated things.
+```
+1979: Richard Waters: 90% Fortran programs have similar procedure.
+
+### ex2.33
+```scheme
+(define (map p sequence)
+    (accumulate (lambda (x y) (cons (p x) y)) nil sequence)
+)
+(define (append seq1 seq2)
+    (accumulate cons seq2 seq1)
+)
+(define (length sequence)
+    (accumulate (lambda (x y) (+ 1 y)) 0 sequence)
+)
+```
+### ex2.34
+```scheme
+(define (horner-eval x coefficient-sequence)
+    (accumulate (lambda (this-coeff higher-terms) (+ this-coeff (* x higher-terms)))
+        0
+        coefficient-sequence
+    )
+)
+```
+### ex2.35
+```scheme
+
+```
+### ex2.36
+```scheme
+(define (accumulate-n op init seqs)
+    (if (null? (car seqs))
+        nil
+        (cons (accumulate op init (car seqs)) (accumulate-n op init (cdr seqs)))
+    )
+)
+```
