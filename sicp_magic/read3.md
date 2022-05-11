@@ -748,6 +748,8 @@ concentrate on the "signals".
 )
 ;use these functions to build other complicated things.
 ```
+sequence your function, do it like module, therefore you can use it multiple times.
+
 1979: Richard Waters: 90% Fortran programs have similar procedure.
 
 ### ex2.33
@@ -773,14 +775,841 @@ concentrate on the "signals".
 ```
 ### ex2.35
 ```scheme
+;(define (count-leaves x)
+;    (cond ((null? x) 0)
+;          ((not (pair? x)) 1)
+;          (else (+ (count-leaves (car x)) (count-leaves (cdr x))))
+;    )
+;)
 
+;very interesting problem.
+(define (count-leaves t)
+    (accumulate + 0 (map (lambda (x) 
+                            (cond ((not (pair? x)) 1)
+                                  ((null? x) 0)
+                                  (else (count-leaves x))
+                            )) 
+    t))
+)
 ```
 ### ex2.36
 ```scheme
+; 确实没有想到用map，不过这个可能和我忘记先做了2.35有关系。。
 (define (accumulate-n op init seqs)
     (if (null? (car seqs))
         nil
-        (cons (accumulate op init (car seqs)) (accumulate-n op init (cdr seqs)))
+        (cons (accumulate op init (map car seqs)) (accumulate-n op init (map cdr seqs)))
+    )
+)
+(define a (list (list 1 2 3) (list 4 5 6) (list 7 8 9) (list 10 11 12)))
+(accumulate-n + 0 a)
+```
+### ex2.37
+```scheme
+;matrix representation: ((1 2 3 4) (4 5 6 6) (6 7 8 9))
+(define (dot-product v w)
+    (accumulate + 0 (map * v w))
+)
+(define (matrix-*-vector m v)
+    (map (lambda (line) (accumulate + 0 (map * line v))) m)
+)
+(define (matrix-*-matrix m n)
+    (let ((cols (transpose n)))
+        (map (lambda (line) (accumulate cons nil (matrix-*-vector cols line))) m)
+    )
+)
+(define (transpose mat)
+    (accumulate-n cons nil mat)
+)
+; test part!
+
+(define v (list (1 2 3 4))
+(define w (list (1 2 3 4))
+(define m (list (list 1 2 3 4) (list 4 5 6 6) (list 6 7 8 9)))
+(dot-product v w)
+(matrix-*-vector m v)
+
+(define n (list (list 1 5 1) (list 2 6 1) (list 3 7 1) (list 4 8 1)))
+(matrix-*-matrix m n)
+;Interesting!
+```
+### ex2.38
+```scheme
+(define (fold-left op initial sequence)
+    (define (iter result rest)
+        (if (null? rest)
+            result
+            (iter (op result (car test)) (cdr test))
+        )
+    )
+    (iter initial sequence)
+)
+(define (accumulate op initial sequence)
+    (if (null? sequence)
+        initial
+        (op (car sequence) (accumulate op initial (cdr sequence)))
+    )
+)
+(accumulate / 1 (list 1 2 3))
+(fold-left / 1 (list 1 2 3))
+(accumulate list nil (list 1 2 3))
+(fold-left list nil (list 1 2 3))
+;The key is your 'operaion' is commutative. eg. + *. Then these two will be the same.
+```
+### ex2.39
+```scheme
+;assume 'fold-right' is same as accumulate
+(define (reverse sequence)
+    (accumulate (lambda (x y) (append y (list x))) nil sequence)
+)
+(define (reverse-v2 sequence)
+    (fold-left (lambda (x y) (append (list y) x)) nil sequence)
+)
+(reverse (list 1 2 3 4 5))
+(reverse-v2 (list 1 2 3 4 5))
+;test done!
+```
+Nested Mappings:
+
+```scheme
+(accumulate append nil (map (lambda (i) (map (lambda (j) (list i j)))) (enumerate-interval 1 n)))
+(define (prime-sum? pair)
+    (prime? (+ (car pair) (cadr pair)))
+)
+```
+
+### ex2.40
+```scheme
+(define (filter predicate sequence)
+    (cond ((null? sequence) nil)
+          ((predicate (car sequence)) (cons (car sequence) (filter predicate (cdr sequence))))
+          (else (filter predicate (cdr sequence)))
+    )
+)
+(define (accumulate op initial sequence)
+    (if (null? sequence)
+        initial
+        (op (car sequence) (accumulate op initial (cdr sequence)))
+    )
+)
+(define (enumerate-interval low high)
+    (if (> low high)
+        nil
+        (cons low (enumerate-interval (+ low 1) high))
+    )
+)
+(define (unique-pairs n)
+    (accumulate append nil (map (lambda (i) (map (lambda (j) (list i j)) (enumerate-interval 1 (- i 1)))) (enumerate-interval 1 n)))
+)
+(define (prime-sum-pairs n)
+    (map (lambda (x) (list (car x) (cadr x) (+ (car x) (cadr x)))) (filter (lambda (x) (prime? (+ (car x) (cadr x)))) (unique-pairs n)))
+)
+```
+### ex2.41
+```scheme
+(define (order-triple n s)
+    (filter (lambda (triple) (= s (+ (car triple) (cadr triple) (car (cdr (cdr triple)))))) (accumulate append nil (accumulate append nil (map (lambda (i) (map (lambda (j) (map (lambda (k) (list i j k)) (enumerate-interval 1 n))) (enumerate-interval 1 n))) (enumerate-interval 1 n)))))
+)
+```
+### ex2.42
+eight-queens puzzle:
+```scheme
+(define (flatmap proc seq)
+    (accumulate append nil (map proc seq))
+)
+(define (length list)
+    (if (null? list)
+        0
+        (+ 1 (length (cdr list)))
+    )
+)
+(define (adjoin-position new-row k rest-of-queens)
+    (if (= (- k 1) (length rest-of-queens))
+        (append rest-of-queens (list new-row))
+        #f
+    )
+)
+(define (find k positions)
+    (if (= 1 k)
+        (car positions)
+        (find (- k 1) (cdr positions))
+    )
+)
+(define (safe? k positions)
+    (define new-row (find k positions))
+    (define (iter positions)
+        (if (null? (cdr positions))
+            #t
+            (if (= (car positions) new-row)
+                #f
+                (iter (cdr positions))
+            )
+        )
+    )
+    (iter positions)
+)
+(define empty-board nil)
+(define (queens board-size)
+    (define (queen-cols k)
+        (if (= k 0)
+            (list empty-board)
+            (filter (lambda (positions) (safe? k positions)) (flatmap (lambda (rest-of-queens) (map (lambda (new-row) (adjoin-position new-row k rest-of-queens)) (enumerate-interval 1 board-size))) (queen-cols (- k 1))))
+        )
+    )
+    (queen-cols board-size)
+)
+(define a (list 1 2 3 4 6))
+(find 5 a)
+(safe? 5 a)
+(adjoin-position 7 6 a)
+(queens 4);test passed
+```
+### ex2.43
+Too many recursion! Of course slow!
+
+### ex2.44
+```scheme
+(define (up-split painter n)
+    (if (= n 0)
+        painter
+        (let ((smaller (up-split painter (- n 1))))
+            (below painter (besides smaller smaller))
+        )
     )
 )
 ```
+### ex2.45
+```scheme
+(define (split procedure1 procedure2)
+    (lambda (painter n)
+        (procedure1 painter (procedure2 ((split procedure1 procedure2) painter (- n 1)) ((split procedure1 procedure2) painter (- n 1))))
+    )
+)
+```
+### Frames
+```scheme
+;assume the vector is on a unit circle.
+(define (frame-coord-map frame)
+    (lambda (v)
+        (add-vect (origin-frame frame) (add-vect (scale-vect (xcor-vect v) (edge1-frame frame)) (scale-vect (ycor-vect v) (edge2-frame frame))))
+    )
+)
+```
+### ex2.46
+```scheme
+(define (make-vect x y)
+    (cons x y)
+)
+(define (xcor-vect vect)
+    (make-vect (car vect) 0)
+)
+(define (ycor-vect vect)
+    (make-vect 0 (cadr vect))
+)
+(define (add-vect vect1 vect2)
+    (make-vect (+ (car vect1) (car vect2)) (+ (cadr vect1) (cadr vect2)))
+)
+(define (sub-vect vect1 vect2)
+    (make-vect (- (car vect1) (car vect2)) (- (cadr vect1) (cadr vect2)))
+)
+(define (scale-vect vect scale)
+    (make-vect (* (car vect) scale) (* (cadr vect) scale))
+)
+```
+### ex2.47
+```scheme
+;for the first case
+(define (make-frame origin edge1 edge2)
+    (list origin edge1 edge2)
+)
+(define (origin-frame frame)
+    (car frame)
+)
+(define (edge1-frame frame)
+    (cadr frame)
+)
+(define (edge2-frame frame)
+    (cadr (cdr frame))
+)
+;for the second case
+(define (make-frame origin edge1 edge2)
+    (cons origin (cons edge1 edge2))
+)
+(define (origin-frame frame)
+    (car frame)
+)
+(define (edge1-frame frame)
+    (cadr frame)
+)
+(define (edge2-frame frame)
+    (cadr (cdr frame))
+)
+;Remember, edge1 and edge2 are vectors, so when using frame, we can simply call them.
+```
+### painters
+if we have a procedure draw-line that draws a line on the screen between two specified points, then we can create painters for line drawings.
+```scheme
+;segment is the side of a graph.
+(define (segments->painter segment-list)
+    (lambda (frame)
+        (for-each (lambda (segment) (draw-line ((frame-coord-map frame) (start-segment segment)) ((frame-coord-map frame) (end-segment segment)))) segment-list)
+    )
+)
+```
+### ex2.48
+```scheme
+(define (make-segment vect1 vect2)
+    (cons vect1 vect2)
+)
+(define (start-segment segment)
+    (car segment)
+)
+(define (end-segment segment)
+    (cadr segment)
+)
+```
+### ex2.49
+```scheme
+; All the procedure will use the same frame given as myframe.
+; a: the painter that draws the outline of the designated frame
+; recall that edge1, edge2 are all vectors in definition.
+; frame origin, edge1, edge2. The offset of the origin will be taken into consideration in frame-coord-map procedure.
+; we assume we get edge1 edge2 origin beforehand.
+(define myframe (make-frame origin edge1 edge2))
+(define segment1 (make-segment (make-vector 0 0) edge1))
+(define segment2 (make-segment (make-vector 0 0) edge2))
+(define segment3 (make-segment edge1 (add-vector edge1 edge2)))
+(define segment4 (make-segment edge2 (add-vector edge1 edge2)))
+; The drawing process was like that:
+;        ^ - - - >
+;        |       ^
+;        |       |
+;        | _ _ _ >
+;     origin point of the frame
+(define outline
+    (segments->painter (list segment1 segment2 segment3 segment4))
+)
+
+; b: the painter that draws an "X" by connecting opposite corners of the frame
+; We've already get the frame, so we just need to lock the points for injection bars into the frame.
+(define segment5 (make-segment (make-vector 0 0) (add-vector edge1 edge2)))
+(define segment6 (make-segment edge1 edge2))
+(define X
+    (segments->painter (list segment5 segment6))
+)
+
+; c: the painter that draws a diamond shape by connecting the mid-points of the sides of the frame.
+(define segment7 (make-segment (scale-vect edge1 0.5) (scale-vect edge2 0.5)))
+(define segment8 (make-segment (scale-vect edge1 0.5) (add-vect edge1 (scale-vect edge2 0.5))))
+(define segment9 (make-segment (scale-vect edge2 0.5) (add-vect edge2 (scale-vect edge1 0.5))))
+(define segment10 (make-segement (add-vect edge1 (scale-vect edge2 0.5)) (add-vect edge2 (scale-vect edge1 0.5))))
+(define diamond
+    (segments->painter (list segment7 segment8 segment9 segment10))
+)
+
+; d: the wave painter?
+; Are you kidding me? basic idea must be transfer it into many line to mimic arc structures in the graph.
+; But it is so troublesome. I skip!!
+```
+### transforming and combining painters
+flip-vert doesn't have to know how a painter works in order to flip it, it just has to know how to turn a frame upside down: the flipped painter just uses the original painter, but in the inverted frame.
+```scheme
+(define (transform-painter painter origin corner1 corner2)
+    (lambda (frame)
+        (let ((m (frame-coord-map frame)))
+            (let ((new-origin (m origin)))
+                (painter (make-frame new-origin (sub-vect (m corner1) new-origin) (sub-vect (m corner2) new-origin)))
+            )
+        )
+    )
+)
+; very interesting, to change the frame structure to flip-vert.
+(define (flip-vert painter)
+    (transform-painter painter (make-vect 0.0 1.0) (make-vect 1.0 1.0) (make-vect 0 0))
+)
+(define (shrink-to-upper-right painter)
+    (transform-painter painter (make-vect 0.5 0.5) (make-vect 1.0 0.5) (make-vect 0.5 1.0))
+)
+(define (rotate90 painter)
+    (transform-painter painter (make-vect 1.0 0.0) (make-vect 1.0 1.0) (make-vect 0.0 0.0))
+)
+(define (squash-inwards painter)
+    (transform-painter painter (make-vect 0.0 0.0) (make-vect 0.65 0.35) (make-vect 0.35 0.65))
+)
+(define (beside painter1 painter2)
+    (let ((split-point (make-vect 0.5 0.0)))
+        (let ((paint-left (transform-painter painter1 (make-vect 0.0 0.0) split-point (make-vect 0.0 1.0)))
+              (paint-right (transform-painter painter2 split-point (make-vect 1.0 0) (make-vect 0.5 1.0)))
+             )
+             (lambda (frame) (paint-left frame) (paint-right frame))     
+        )
+    )
+)
+```
+### ex2.50
+```scheme
+(define (flip-horiz painter)
+    (transform-painter painter (make-vect 1.0 0) (make-vect 0 0) (make-vect 1.0 1.0))
+)
+(define (rotate180 painter)
+    (transform-painter painter (make-vect 1.0 1.0) (make-vect 0 1.0) (make-vect 1.0 0))
+)
+(define (rotate270 painter)
+    (transform-painter painter (make-vect 0.0 1.0) (make-vect 0.0 0.0) (make-vect 1.0 1.0))
+)
+```
+### ex2.51
+```scheme
+(define (below painter1 painter2)
+    (let ((paint-below (transform-painter painter1 (make-vect 0.0 0.0) (make-vect 1.0 0) (make-vect 0.0 0.5)))
+          (paint-up (transform-painter painter2 (make-vect 0.0 0.5) (make-vect 1.0 0.5) (make-vect 0.0 1.0))))
+        (lambda (frame) (paint-below frame) (paint-up frame))
+    )
+)
+```
+
+### levels of language for robust design
+stratified design: the notion that a complex system should be structured as a sequence of levels that are described using a sequence of languages. Each level is constructed by combining parts that are regarded as primitive at that level, and the parts constructed at each level are used as primitives at the next level.
+
+stratified design helps make programs robust, that is, it makes it likely that small changes in a specification will require correspondingly small changes in the program.
+
+I want to skip ex2.52, No need to do..
+
+## 2.3: Symbolic Data
+```scheme
+(define (memq item x)
+    (cond ((null? x) false)
+          ((eq? item (car x)) x)
+          (else (memq item (cdr x)))
+    )
+)
+```
+### ex2.53
+```scheme
+(a b c)
+((george))
+((y1 y2))
+(y1 y2)
+#f
+#f
+(red shoes blue socks)
+```
+### ex2.54
+```scheme
+(define (equal? list1 list2)
+    (cond  ((and (null? list1) (null? list2)) #t)
+           ((eq? (car list1) (car list2)) (equal? (cdr list1) (cdr list2)))
+           (else #f) 
+    )
+)
+```
+### ex2.55
+```scheme
+; ``abcde --> `abcde
+; (car ``abcde) --> (car (list ` a b c d e)) ---> `:quote
+```
+
+### 2.3.2 symbolic differentiation
+using some wishful thinking method.
+```scheme
+;Thinking:
+;
+;(variable? e): is e a variable?
+;(same-variable? v1 v2): are v1 and v2 the same variable?
+;(sum? e): is e a sum?
+;(addend e): addend of the sum e
+;(augend e): augend of the sum e
+;(make-sum a1 a2): construct the sum of a1 and a2
+;(product? e): is e a product?
+;(multiplier e): Multiplier of the product e
+;(multiplicand e): Multiplicand of the product e
+;(make-product m1 m2): construct the product of m1 and m2
+; ex2.56: add exponentiation
+;(exponentiation? e): is e an exponentiation
+;(base x): base of the exponentiation
+;(exponent x): exponent of exponentiation
+;(make-exponentiation v1 v2): construct the exponentiation of v1 and v2
+(define (deriv exp var)
+    (cond ((number? exp) 0)
+          ((variable? exp) (if (same-variable? exp var) 1 0))
+          ((sum? exp) (make-sum (deriv (addend exp) var) (deriv (augend exp) var)))
+          ((product? exp) (make-sum (make-product (multiplier exp) (deriv (multiplicand exp) var)) (make-product (deriv (multiplier exp) var) (multiplicand exp))))
+          ; ex2.56 ((exponentiation? exp) (make-product (make-product (exponent exp) (make-exponentiation (base exp) (- (exponent exp) 1))) (deriv (base exp) var)))
+          (else (error "unknown expression type - DERIV" exp))
+    )
+)
+(define (variable? x) (symbol? x))
+(define (same-variable? v1 v2)
+    (and (variable? v1) (variable? v2) (eq? v1 v2))
+)
+(define (sum? x)
+    (and (pair? x) (eq? (car x) `+))
+)
+(define (addend s) (cadr s))
+;(define (augend s) (caddr s))
+(define (augend s)
+    (if (= (length (cddr s)) 1)
+        (caddr s)
+        (cons `+ (cddr s))
+    )
+)
+(define (product? x)
+    (and (pair? x) (eq? (car x) `*))
+)
+(define (multiplier p)
+    (cadr p)
+)
+(define (multiplicand p)
+    (if (= (length (cddr p)) 1) 
+        (caddr p)
+        (cons `* (cddr p))
+    )
+)
+(define (make-sum a1 a2)
+    (cond ((=number? a1 0) a2)
+          ((=number? a2 0) a1)
+          ((and (number? a1) (number? a2)) (+ a1 a2))
+          (else (list `+ a1 a2))
+    )
+)
+(define (=number? exp num)
+    (and (number? exp) (= exp num))
+)
+(define (make-product m1 m2)
+    (cond ((or (=number? m1 0) (=number? m2 0)) 0)
+          ((=number? m1 1) m2)
+          ((=number? m2 1) m1)
+          ((and (number? m1) (number? m2)) (* m1 m2))
+          (else (list `* m1 m2))
+    )
+)
+;ex2.56: exponentiation
+(define (exponentiation? x)
+    (and (pair? x) (eq? (car x) `**))
+)
+(define (base x)
+    (cadr x)
+)
+(define (exponent x)
+    (caddr x)
+)
+(define (power v1 v2)
+    (if (= v2 0)
+        1
+        (* v1 (power v1 (- v2 1)))
+    )
+)
+(define (make-exponentiation v1 v2)
+    (cond ((=number? v2 0) 1)
+          ((=number? v2 1) v1)
+          ((and (number? v1) (number? v2)) (power v1 v2))
+          (else (list `** v1 v2))
+    )
+)
+```
+
+### ex2.58
+```scheme
+;a
+(define (deriv exp var)
+    (cond ((number? exp) 0)
+          ((variable? exp) (if (same-variable? exp var) 1 0))
+          ((sum? exp) (make-sum (deriv (addend exp) var) (deriv (augend exp) var)))
+          ((product? exp) (make-sum (make-product (multiplier exp) (deriv (multiplicand exp) var)) (make-product (multiplicand exp) (deriv (multiplier exp) var))))
+          (else (error "unknown expression type" exp))
+    )
+)
+(define (variable? x) (symbol? x))
+(define (same-variable? v1 v2)
+    (and (variable? v1) (variable? v2) (eq? v1 v2))
+)
+(define (sum? x)
+    (and (pair? x) (eq? (cadr x) `+))
+)
+(define (addend x)
+    (car x)
+)
+(define (augend x)
+    (caddr x)
+)
+(define (=number? x num)
+    (and (number? x) (= exp num))
+)
+(define (make-sum x1 x2)
+    (cond ((=number? x1 0) x2)
+          ((=number? x2 0) x1)
+          ((and (number? x1) (number? x2)) (+ x1 x2))
+          (else (list x1 `+ x2))
+    )
+)
+(define (product? x)
+    (and (pair? x) (eq? (cadr x) `*))
+)
+(define (multiplier x)
+    (car x)
+)
+(define (multiplicand x)
+    (caddr x)
+)
+(define (make-product x1 x2)
+    (cond ((or (=number? x1 0) (=number? x2 0)) 0)
+          ((=number? x1 1) x2)
+          ((=number? x2 1) x1)
+          ((and (number? x1) (number? x2)) (* x1 x2))
+          (else (list x1 `* x2))
+    )
+)
+(deriv `(x + (3 * (x + (y + 2)))) `x)
+;b
+(define (augend x)
+    (if (= (length (cddr x)) 1)
+        (caddr x)
+        (cddr x)
+    )
+)
+(define (multiplicand x)
+    (if (= (length (cddr x)) 1)
+  +
+  ++++++++++++++++++++++++++++++++       (caddr x)
+        (cddr x)
+    )
+)
+```
+### 2.3.3
+A set is simply a collection of distinct objects.
+```scheme
+;judge a element is in the set.
+(define (element-of-set? x set)
+    (cond ((null? set) false)
+          ((equal? x (car set)) true)
+          (else (element-of-set? x (cdr set)))
+    )
+)
+;insert a element into the set.
+(define (adjoin-set x set)
+    (if (element-of-set? x set)
+        set
+        (cons x set)
+    )
+)
+;find the intersection-set of set1 and set2
+(define (intersection-set set1 set2)
+    (cond ((or (null? set1) (null? set2)) `())
+          ((element-of-set? (car set1) set2) (cons (car set1) (intersection-set (cdr set1) set2)))
+          (else (intersection-set (cdr set1) set2))
+    )
+)
+```
+### ex2.59
+```scheme
+(define (union-set set1 set2)
+    (cond ((and (null? set1) (null? set2)) `())
+          ((null? set2) set1)
+          ((null? set1) set2)
+          ((element-of-set? (car set1) set2) (union-set (cdr set1) set2))
+          (else (cons (car set1) (union-set (cdr set1) set2)))
+    )
+)
+(union-set (list 1 2 3 4) (list 1 4 6 7))
+```
+### ex2.60
+```scheme
+;allow duplicates
+;judge an element is in the set.
+(define (element-of-set? x set)
+    (cond ((null? set) false)
+          ((equal? x (car set)) true)
+          (else (element-of-set? x (cdr set)))
+    )
+)
+;insert a element into the set.
+(define (adjoin-set x set)
+    (cons x set)
+)
+;find the intersection-set of set1 and set2
+(define (intersection-set set1 set2)
+    (cond ((or (null? set1) (null? set2)) `())
+          ((element-of-set? (car set1) set2) (append (list (car set1) (car set1)) (intersection-set (cdr set1) set2)))
+          (else (intersection-set (cdr set1) set2))
+    )
+)
+(define (union-set set1 set2)
+    (append set1 set2)
+)
+;quicker.
+```
+### sets are ordered lists
+```scheme
+(define (element-of-set? x set)
+    (cond ((null? set) false)
+          ((= x (car set)) true)
+          ((< x (car set)) false)
+          (else (element-of-set? x (cdr set)))
+    )
+)
+(define (intersection-set set1 set2)
+    (if (or (null? set1) (null? set2))
+        `()
+        (let ((x1 (car set1)) (x2 (car set2)))
+             (cond ((= x1 x2) (cons x1 (intersection-set (cdr set1) (cdr set2))))
+                   ((< x1 x2) (intersection-set (cdr set1) set2))
+                   ((> x1 x2) (intersection-set set1 (cdr set2)))
+             )
+        )
+    )
+)
+```
+### ex2.61
+```scheme
+(define (adjoin-set x set)
+   (define (join-set x set front)
+        (if (element-of-set? x set)
+            set
+            (if (null? set)
+                (append front (list x))
+                (if (< x (car set))
+                    (append front (cons x set))
+                    (join-set x (cdr set) (append front (list (car set))))
+                )
+            )
+        )
+    )
+    (join-set x set nil)
+)
+(adjoin-set 5 (list 1 2 3 4 5 6))
+(adjoin-set 10 (list 1 2 3 4 5 6))
+(adjoin-set 7 (list 1 3 5 6 9 10))
+```
+
+### ex2.62
+```scheme
+(define (union-set set1 set2)
+    (if (and (null? set1) (null? set2))
+        `()
+        (if (null? set1)
+            set2
+            (if (null? set2)
+                set1
+                (let ((x1 (car set1)) (x2 (car set2)))
+                    (cond ((= x1 x2) (cons x1 (union-set (cdr set1) (cdr set2))))
+                          ((< x1 x2) (cons x1 (union-set (cdr set1) set2)))
+                          ((> x1 x2) (cons x2 (union-set set1 (cdr set2))))
+                    )
+                )
+            )
+        )
+    )
+)
+(union-set (list 1 2 3 4 5) (list 3 5 6 9 11))
+(union-set (list 1 4 6) nil)
+(union-set nil (list 2 5 7))
+(union-set nil nil)
+```
+### sets as binary trees
+```scheme
+(define (entry tree) (car tree))
+(define (left-branch tree) (cadr tree))
+(define (right-branch tree) (caddr tree))
+(define (make-tree entry left right) (list entry left right))
+(define (element-of-set? x set)
+    (cond ((null? set) false)
+          ((= x (entry set)) true)
+          ((< x (entry set)) (element-of-set? x (left-branch set)))
+          ((> x (entry set)) (element-of-set? x (right-branch set)))
+    )
+)
+;adjoin an item to a set.
+(define (adjoin-set x set)
+    (cond ((null? set) (make-tree x `() `()))
+          ((= x (entry set)) set)
+          ((< x (entry set)) (make-tree (entry set) (adjoin-set x (left-branch set)) (right-branch set)))
+          ((> x (entry set)) (make-tree (entry set) (right-branch set) (adjoin-set x (right-branch set))))
+    )
+)
+```
+
+### ex2.63
+```scheme
+;way one
+(define (tree->list-1 tree)
+    (if (null? tree)
+        `()
+        (append (tree->list-1 (left-branch tree)) (cons (entry tree) (tree->list-1 (right-branch tree))))
+    )
+)
+;way two
+(define (tree->list-2 tree)
+    (define (copy-to-list tree result-list)
+        (if (null? tree)
+            result-list
+            (copy-to-list (left-branch tree) (cons (entry tree) (copy-to-list (right-branch tree) result-list)))
+        )
+    )
+    (copy-to-list tree `())
+)
+(tree->list-1 (make-tree 123 (make-tree 2 nil nil) (make-tree 24 nil nil)))
+(tree->list-2 (make-tree 123 (make-tree 2 nil nil) (make-tree 24 nil nil)))
+```
+a). same.
+b). apparently the second one is better but harder to understand.
+
+### ex2.64
+```scheme
+(define (list->tree elements)
+    (car (partial-tree elements (length elements)))
+)
+(define (partial-tree elts n)
+    (if (= n 0)
+        (cons `() elts)
+        (let ((left-size (quotient (- n 1) 2)))
+             (let ((left-result (partial-tree elts left-size)))
+                (let ((left-tree (car left-result))
+                      (non-left-elts (cdr left-result))
+                      (right-size (- n (+ left-size 1)))
+                     )
+                     (let ((this-entry (car non-left-elts))
+                           (right-result (partial-tree (cdr non-left-elts) right-size))
+                          )
+                          (let ((right-tree (car right-result))
+                                (remaining-elts (cdr right-result))
+                               )
+                               (cons (make-tree this-entry left-tree right-tree) remaining-elts)
+                          )
+                     )
+                )
+             )
+        )
+    )
+)
+;a: I draw the process with pen and paper.
+;b: O(N) = 2O(N/2) + 2 = N * O(1) + 2log N = O(N)
+```
+### ex2.65
+```scheme
+(define (union-set-tree tree-set1 tree-set2)
+    (define (union-set set1 set2)
+        (if (and (null? set1) (null? set2))
+            `()
+            (if (null? set1)
+                set2
+                (if (null? set2)
+                    set1
+                    (let ((x1 (car set1)) (x2 (car set2)))
+                        (cond ((= x1 x2) (cons x1 (union-set (cdr set1) (cdr set2))))
+                            ((< x1 x2) (cons x1 (union-set (cdr set1) set2)))
+                            ((> x1 x2) (cons x2 (union-set set1 (cdr set2))))
+                        )
+                    )
+                )
+            )
+        )
+    )
+    (let ((set1 (tree->list-1 tree-set1))
+          (set2 (tree->list-1 tree-set2))
+         )
+         (union-set set1 set2)
+    )
+)
+;the intersection-set is the same.
+```
+### sets and information retrieval
