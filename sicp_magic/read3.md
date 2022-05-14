@@ -1613,3 +1613,192 @@ b). apparently the second one is better but harder to understand.
 ;the intersection-set is the same.
 ```
 ### sets and information retrieval
+```scheme
+;in unordered list, procedure lookup can be represented as:
+(define (lookup given-key set-of-records)
+    (cond ((null? set-of-records) false)
+          ((equal? given-key (key (car set-of-records))) (car set-of-records))
+          (else (lookup given-key (cdr set-of-records)))
+    )
+)
+```
+
+### ex2.66
+```scheme
+(define (make-tree entry left right) (list entry left right))
+(define (entry tree) (car tree))
+(define (left tree) (cadr tree))
+(define (right tree) (caddr tree))
+(define (lookup given-key set-of-records)
+    (cond ((null? tree) false)
+          ((= x (key (entry tree))) (entry tree))
+          ((< x (key (entry tree))) (lookup given-key (left set-of-records)))
+          ((> x (key (entry tree))) (lookup given-key (right set-of-records)))
+    )
+)
+```
+
+### example:huffman encoding trees
+huffman encoding trees: variable-length for different codes. The frequently used letter is given shorter code.
+
+example of building a huffman tree, starting from the lowest weight node to build a whole tree.
+```scheme
+;encode and build procedure.
+;build leaf first.
+(define (make-leaf symbol weight)
+    (list `leaf symbol weight)
+)
+
+(define (leaf? object)
+    (eq? (car object) `leaf)
+)
+
+(define (symbol-leaf x) (cadr x))
+(define (weight-leaf x) (caddr x))
+;build node
+(define (make-code-tree left right)
+    (list left right (append (symbols left) (symbols right)) (+ (weight left) (weight right)))
+)
+
+(define (left-branch tree) (car tree))
+(define (right-branch tree) (cadr tree))
+
+(define (symbols tree)
+    (if (leaf? tree)
+        (list (symbol-leaf tree))
+        (caddr tree)
+    )
+)
+(define (weight tree)
+    (if (leaf? tree)
+        (weight-leaf tree)
+        (cadddr tree)
+    )
+)
+;decoding procedure, simply judge the bits has come to the leaf, then return symbol.
+(define (decode bits tree)
+    (define (decode-1 bits current-branch)
+        (if (null? bits)
+            `()
+            (let ((next-branch (choose-branch (car bits) current-branch)))
+                (if (leaf? next-branch)
+                    (cons (symbol-leaf next-branch) (decode-1 (cdr bits) tree))
+                    (decode-1 (cdr bits) next-branch)
+                )
+            )
+        )
+    )
+    (decode-1 bits tree)
+)
+(define (choose-branch bit branch)
+    (cond ((= bit 0) (left-branch branch))
+          ((= bit 1) (right-branch branch))
+          (else (error "bad bit - CHOOSE-BRANCH" bit))
+    )
+)
+```
+
+### Sets of weighted elements.
+```scheme
+(define (adjoin-set x set)
+    (cond ((null? set) (list x))
+          ((< (weight x) (weight (car set))) (cons x set))
+          (else (cons (car set) (adjoin-set x (cdr set))))
+    )
+)
+(define (make-leaf-set pairs)
+    (if (null? pairs)
+        `()
+        (let ((pair (car pairs)))
+            (adjoin-set (make-leaf (car pair) (cadr pair)) (make-leaf-set (cdr pairs)))
+        )
+    )
+)
+```
+### ex2.67
+```scheme
+(define sample-tree
+    (make-code-tree (make-leaf `A 4)
+                    (make-code-tree (make-leaf `B 2) (make-code-tree (make-leaf `D 1) (make-leaf `C 1)))
+    )
+)
+(define sample-message `(0 1 1 0 0 1 0 1 0 1 1 1 0))
+(decode sample-message sample-tree)
+;(A D A B B C A)
+```
+### ex2.68
+```scheme
+(define (encode message tree)
+    (if (null? message)
+        `()
+        (append (encode-symbol (car message) tree) (encode (cdr message) tree))
+    )
+)
+(define (element-in-set? element set)
+    (if (null? set)
+        #f
+        (if (eq? element (car set))
+            #t
+            (element-in-set? element (cdr set))
+        )
+    )
+)
+; we can utilize the structure of the huffman tree.
+; every node stores the symbol below.
+(define (encode-symbol symbol tree)
+    (define (search symbol tree)
+      (if (leaf? tree) `()  
+      	(if (element-in-set? symbol (symbols (left-branch tree)))
+             (cons 0 (search symbol (left-branch tree)))
+               (cons 1 (search symbol (right-branch tree)))     
+        )
+      ) 
+    )
+  (if (element-in-set? symbol (symbols tree)) 
+       (search symbol tree)  
+       (error "try to encode NO exist symbol -- ENCODE-SYMBOL" symbol))
+)
+```
+### ex2.69
+```scheme
+(define (generate-huffman-tree pairs)
+    (successive-merge (make-leaf-set pairs))
+)
+(define (make-code-tree left right)
+    (list left right (append (symbols left) (symbols right)) (+ (weight left) (weight right)))
+)
+(define (reverse pairs)
+    (if (null? (cdr pairs))
+        pairs
+        (append (reverse (cdr pairs)) (list (car pairs)))
+    )
+)
+(define (successive-merge pairs)
+    (define rpairs (reverse pairs))
+    (if (null? pairs)
+        #f
+        (if (null? (cddr pairs))
+            (make-code-tree (car pairs) (cadr pairs))
+            (make-code-tree (car rpairs) (successive-merge (reverse (cdr rpairs))))
+        )
+    )
+)
+```
+### ex2.70
+```scheme
+(define blist (list (list `A 2) (list `BOOM 1) (list `GET 2) (list `JOB 2) (list `NA 16) (list `SHA 16) (list `YIP 9) (list `WAH 1)))
+(generate-huffman-tree blist)
+; encode might be too boring to execute with these examples.
+```
+
+### ex2.71
+```scheme
+; least: n - 1 code. most: 1
+```
+### ex2.72
+```scheme
+; O (log N) or O (1)
+; lets do a sum:
+; sum it. the average might be O (1);
+; cause basically we can judge from the largest entry: sum (1/2) ^ {log N - K} * (log N - k) -> O (1)
+```
