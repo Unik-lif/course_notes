@@ -271,7 +271,7 @@ b. Space: O(log N) Steps: O(log N)
 ```
 ### ex1.19
 ```scheme
-by simple calculation, we get p = p ^ 2 + q ^ 2. q = 2 * p * q + q ^ 2.
+;by simple calculation, we get p = p ^ 2 + q ^ 2. q = 2 * p * q + q ^ 2.
 ```
 this exercise give us a way to think logarithmically.
 

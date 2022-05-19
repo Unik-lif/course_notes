@@ -1369,8 +1369,7 @@ using some wishful thinking method.
 )
 (define (multiplicand x)
     (if (= (length (cddr x)) 1)
-  +
-  ++++++++++++++++++++++++++++++++       (caddr x)
+        (caddr x)
         (cddr x)
     )
 )
