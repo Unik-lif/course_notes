@@ -375,6 +375,111 @@ complex:(magnitude z) -> polar:(magnitude z) -> (magnitude z): (sqrt ...)
 It is meaningful to define operations that cross the type boundaries.
 
 One way to handle cross-type operations is to design a different procedure for each possible combination of types for which the operation is valid. But it is cumbersome.
-```scheme
 
+A better way might be coercion. We can arithmetically combine an ordinary number with a complex number, we can view the ordinary number as a complex number whose imaginary part is zero.
+
+
+```scheme
+(define (scheme-number->complex n)
+      (make-complex-from-real-imag (contents n) 0)
+)
+(put-coercion `scheme-number `complex scheme-number->complex)
+
+(define (apply-generic op . args) ;; args can be seen as a list.
+      (let ((type-tags (map type-tag args)))
+            (let ((proc (get op type-tags))) ;; find the corresponding procedure.
+                  (if proc ;; this procedure exists.
+                        (apply proc (map contents args)) ;; get the type of the args.
+                        (if (= (length args) 2) ;; Two args.
+                              (let ((type1 (car type-tags))
+                                    (type2 (cadr type-tags))
+                                    (a1 (car args))
+                                    (a2 (cadr args)))
+                                   ;(if (eq? type1 type2)
+                                         ;(apply-generic op a1 a2)  
+                                          (let ((t1->t2 (get-coercion type1 type2))
+                                                (t2->t1 (get-coercion type2 type1)))
+                                                (cond (t1->t2 (apply-generic op (t1->t2 a1) a2)) ;; depends on whether the base has these transfer method.
+                                                      (t2->t1 (apply-generic op a1 (t2->t1 a2)))
+                                                      (else (error "No method for these types" (list op type-tags)))
+                                                )
+                                          )
+                                    ;)
+                              )
+                              (error "No method for these types" (list op type-tags))
+                        )
+                  )
+            )
+      )
+)
 ```
+### ex2.81
+```scheme
+(define (scheme-number->scheme-number n) n)
+(define (complex->complex z) z)
+(put-coercion `scheme-number `scheme-number scheme-number->scheme-number)
+(put-coercion `complex `complex complex->complex)
+; a:
+; when louis's coercion procedures installed, nothing strange will happen. Simply do like t1->t2.
+; convert x and y to complex or scheme-number beforhand, then call expt to get the result.
+
+; b:
+; Unfortunately, this procedure can not be omitted, Or error will happens because the coercion table don't have these elements.
+
+; c:
+; (added as comment above.)
+```
+### ex2.82
+```scheme
+(define (apply-generic op . args)
+      (define (type-tags args)
+            (map type-tag args)
+      )
+      (define (iterate pivot)
+            (if (null? pivot)
+                  (error "No arguments are given" args)
+                  (let (pivot-type (type-tag (car pivot)))
+                        (let (
+                              (proc 
+                                    (get op 
+                                          (type-tags 
+                                                (map 
+                                                      (lambda (x) 
+                                                            (let (coercion (get-coercion (type-tag x) pivot-type))
+                                                                  (if coercion
+                                                                        (coercion x)
+                                                                        x
+                                                                  )
+                                                            )
+                                                      ) 
+                                                args)
+                                          )
+                                    )
+                              ))
+                              (if proc
+                                    (apply proc (map contents args))
+                                    (iterate (cdr pivot))
+                              )
+                        )
+                  )
+            )
+      )
+      (let ((proc (get op type-tags)))
+            (if proc
+                  (apply proc (map contents args)) ; proc exists -> same type -> apply this procedure..
+                  (iterate args)
+            )
+      )
+)
+```
+### ex2.83
+```scheme
+; complex <- real <- rational <- integer
+; design a procedure that raises objects of that type one level in the tower.
+; show how to install a generic raise operation that will work for each type.
+(put `raise (list `integer `rational) integer->rational) ; integer->rational for example
+(define (raise type1 type2)
+      (get `raise (list type1 type2)) ; raise from type1 to type2.
+)
+```
+### ex2.84
