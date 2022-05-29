@@ -483,3 +483,151 @@ A better way might be coercion. We can arithmetically combine an ordinary number
 )
 ```
 ### ex2.84
+```scheme
+; modify the raise operation.
+; modify the apply-generic procedure so that it coerces its arguments to have the same type by the method of successive raising, as discussed in this section.
+; The raise order will depend solely on raise function exists.
+
+(define (apply-generic op . args) ;; args can be seen as a list.
+      (let ((type-tags (map type-tag args)))
+            (let ((proc (get op type-tags))) ;; find the corresponding procedure.
+                  (if proc ;; this procedure exists.
+                        (apply proc (map contents args)) ;; get the type of the args.
+                        (if (= (length args) 2) ;; Two args.
+                              (let ((type1 (car type-tags))
+                                    (type2 (cadr type-tags))
+                                    (a1 (car args))
+                                    (a2 (cadr args)))
+                                   ;(if (eq? type1 type2)
+                                         ;(apply-generic op a1 a2)  
+                                          (let ((t1->t2 (raise type1 type2))
+                                                (t2->t1 (raise type2 type1))) ; judge whether this coercion exists.
+                                                (cond (t1->t2 (apply-generic op (t1->t2 a1) a2)) ;; depends on whether the base has these transfer method.
+                                                      (t2->t1 (apply-generic op a1 (t2->t1 a2)))
+                                                      (else (error "No method for these types" (list op type-tags)))
+                                                )
+                                          )
+                                    ;)
+                              )
+                              (error "No method for these types" (list op type-tags))
+                        )
+                  )
+            )
+      )
+)
+```
+
+### ex2.85
+```scheme
+; define a procedure called drop to lower the type in the tower of types.
+; when we project it and raise the result back to the type we started with, we end up with something equal to what we started with.
+; this is the same(;)
+; I guess it not so meaningful to write all the procedure and build such a big system..
+```
+
+### ex2.86
+```scheme
+(define (sine x)
+      (lambda (x) (tag (sin x)))
+)
+(define (cosine x)
+      (lambda (x) (tag (cos x)))
+)
+```
+## 2.5.3: symbolic algebra
+### Polynomials
+$5x^{2} + 3x + 7$ is a simple polynomial in x, and $(y^{2} + 1)x^{3} + (2y)x + 1$ is a polynomial in x whose coefficients are polynomials in y.
+
+Using lagrange Interpolation Polynomial we can recover the coefficients of a polynomial of degree n given the values of the polynomial at n + 1 points.
+
+We can represent polynomials using a data structure called a poly, which consists of a variable and a collection of terms. We assume that we have selectors variable and term-list that extract those parts from a poly and a constructor make-poly that assembles a poly from a given variable and a term list.
+```scheme
+(define (add-poly p1 p2)
+      (if (same-variable? (variable p1) (variable p2))
+            (make-poly (variable p1) (add-terms (term-list p1) (term-list p2)))
+            (error "polys not in same var - ADD-POLY" (list p1 p2))
+      )
+)
+(define (mul-poly p1 p2)
+      (if (same-variable? (variable p1) (variable p2))
+            (make-poly (variable p1) (mul-terms (term-list p1) (term-list p2)))
+            (error "Polys not in same var - MUL-POLY" (list p1 p2))
+      )
+)
+(define (install-polynomial-package)
+      ;; internal procedures.
+      ;; representation of poly
+      (define (make-poly variable term-list) (cons variable term-list))
+      (define (variable p) (car p))
+      (define (term-list p) (cdr p))
+      ;; representation of terms 
+      
+      ;(define (add-poly p1 p2) ...)
+      ;(define (mul-poly p1 p2) ...)
+      
+      ;; interface to rest of the system.
+      (define (tag p) (attach-tag `polynomial p))
+      (put `add `(polynomial polynomial) (lambda (p1 p2) (tag (add-poly p1 p2))))
+      (put `mul `(polynomial polynomial) (lambda (p1 p2) (tag (mul-poly p1 p2))))
+      (put `make `polynomial (lambda (var terms) (tag (make-poly var terms))))
+`done
+)
+(define (add-terms L1 L2)
+      (cond ((empty-termlist? L1) L2)
+            ((empty-termlist? L2) L1)
+            (else
+                  (let ((t1 (first-term L1)) (t2 (first-term L2)))
+                        (cond ((> (order t1) (order t2)) (adjoin-term t1 (add-terms (rest-terms L1) L2)))
+                              ((< (order t1) (order t2)) (adjoin-term t2 (add-terms (rest-terms L2) L1)))
+                              (else (adjoin-term (make-term (order t1) (add (coeff t1) (coeff t2))) (add-terms (rest-terms L1) (rest-terms L2))))
+                        )
+                  )
+            )
+      )
+)
+(define (mul-terms L1 L2)
+      (if (empty-termlist? L1)
+            (the-empty-termlist)
+            (add-terms (mul-term-by-all-terms (first-term L1) L2) (mul-terms (rest-terms L1) L2))
+      )
+)
+(define (mul-term-by-all-terms t1 L)
+      (if (empty-termlist? L)
+            (the-empty-termlist)
+            (let ((t2 (first-term L)))
+                  (adjoin-term (make-term (+ (order t1) (order t2)) (mul (coeff t1) (coeff t2))) (mul-term-by-all-terms t1 (rest-terms L)))
+            )
+      )
+)
+```
+### Representing term lists:
+A polynomial is said to be dense if it has nonzero coefficients in terms of most orders. If it has many zero terms it is said to be sparse.
+```scheme
+(define (adjoin-term term term-list)
+      (if (=zero? (coeff term))
+            term-list
+            (cons term term-list)
+      )
+)
+(define (the-empty-termlist) `())
+(define (first-term term-list) (car term-list))
+(define (rest-term term-list) (cdr term-list))
+(define (empty-termlist? term-list) (null? term-list))
+
+(define (make-term order coeff) (list order coeff))
+(define (order term) (car term))
+(define (coeff term) (cadr term))
+(define (make-polynomial var terms)
+      ((get `make `polynomial) var terms)
+)
+```
+### ex2.87
+```scheme
+(define (=zero? x)
+      (if (pair? x)
+            #f
+            (= x 0)
+      )
+)
+```
+
