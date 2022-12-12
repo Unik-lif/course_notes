@@ -53,3 +53,41 @@ Stopped reason: SIGSEGV
 ### 尝试二，利用mmap函数将外界文件读入程序中，利用外界文件的Hex code来执行。
 
 尝试成功。
+
+相关代码：非常简单。
+```C
+int main(int argc, char* argv[]) {
+    if (argc <= 4) {
+        fprintf(stderr, "Usage: addin FILE OFFSET A B\n\
+    Prints A + B.\n");
+        exit(1);
+    }
+
+    const char* file = argv[1];
+    size_t offset = strtoul(argv[2], 0, 0);
+    int a = strtol(argv[3], 0, 0);
+    int b = strtol(argv[4], 0, 0);
+
+    // Load the file into memory
+    int fd = open(file, O_RDONLY);
+    if (fd < 0) {
+        die(file);
+    }
+
+    off_t size = filesize(fd); // 得到文件的实际长度
+    if (size < 0) {
+        die(file);
+    }
+
+    void* data = mmap(NULL, size, PROT_READ | PROT_EXEC, MAP_SHARED, fd, 0); // 利用mmap将该文件的具体内容读入内存中，以data来存储。
+    if (data == MAP_FAILED) {
+        die(file);
+    }
+    uintptr_t data_address = (uintptr_t) data;
+
+    // Call `add`!
+    int (*add)(int, int) = (int (*)(int, int)) (data_address + offset);
+
+    printf("%d + %d = %d\n", a, b, add(a, b));
+}
+```
