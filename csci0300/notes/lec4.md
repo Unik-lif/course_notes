@@ -1,4 +1,4 @@
-## Lec4 & Lec5 & Lec6
+## Lec4 & Lec5 & Lec6 & Lec7
 ### Lec4: lifetime:
 lifetime将会决定变量存储的region位置。
 
@@ -35,4 +35,13 @@ sizeof函数仅是在编译时使用的，这也意味着动态分配的空间�
 
 在关闭优化时，我们将会看到编译器的reorder能力失效。否则在栈中声明一组变量时，会被编译器reorder，让其内存的利用率更高。
 
-但是，在采用struct结构体进行包装的时候，struct严格要求内存布局如其声明所示，这里的内存排布不会被编译器优化。
+但是，在采用struct结构体进行包装的时候，struct严格要求内存布局如其声明所示，这里的内存排布不会被编译器优化。、
+
+### Lec7: Malloc rules
+任何malloc分配的指针在十六的倍数处才开始分配，也就是说：
+
+any pointer returned from malloc points to an address that is a multiple of 16.
+
+### Lab3:
+计算机读指令是从低地址读到高地址（
+
