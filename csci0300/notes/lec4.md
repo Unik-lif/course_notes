@@ -43,5 +43,21 @@ sizeof函数仅是在编译时使用的，这也意味着动态分配的空间�
 any pointer returned from malloc points to an address that is a multiple of 16.
 
 ### Lab3:
-计算机读指令是从低地址读到高地址（
+计算机读指令是从低地址读到高地址，注意小端序方面的区分。
 
+### Proj snake:
+UTF-8字数统计：
+```C
+size_t count_utf8_code_points(const char *s) {
+    size_t count = 0;
+    while (*s) {
+        count += (*s++ & 0xC0) != 0x80;
+    }
+    return count;
+}
+```
+过于聪明了，这个代码。
+
+linux环境下的read和write函数都是有一大堆坑，尤其是在以stdin和stdout的方式来使用的时候。
+
+以Snake项目中涉及的read为例，该函数说实在的就是读取数据流的函数。如果要以stdin来用，需要用"\n"来告知输入结束，并且这个被写入缓存中的东西并不会以`'\0'`结尾以告知，因为它没有义务成为字符串，它只是stream。
