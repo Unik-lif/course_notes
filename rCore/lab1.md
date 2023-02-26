@@ -56,7 +56,53 @@ Qemu不支持动态链接，加载时的原理也较为简单，因此偶尔需�
 - t类寄存器可以随便用，s不可以。
 5. sp 和 ra 是调用者还是被调用者保存寄存器，为什么这样约定？
 - ra需要被调用者保存返回，sp也需要被调用者寄存器好好保存。
-1. 如何使用寄存器传递函数调用的参数和返回值？如果寄存器数量不够用了，如何传递函数调用的参数？
+6. 如何使用寄存器传递函数调用的参数和返回值？如果寄存器数量不够用了，如何传递函数调用的参数？
 - 使用好调用的规范就行了，如果寄存器数量不够，你就存在栈上呗。
 
 #### 实验与练习
+1. 实现一个Linux应用程序A，显示当前目录下的文件名：
+```Rust
+// RTFM is a very good way to learn sth well.
+use std::fs;
+use std::env;
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    if args.len() == 2 {
+        for file in fs::read_dir(format!("{}", args[1])).unwrap() {
+            println!("{}", file.unwrap().path().display());
+        }
+    } else {
+        println!("Error!");
+    }
+}
+```
+2. 调用栈：在DEET项目中写过。
+3. 实现一个基于rcore/ucore tutorial的应用程序C，用sleep系统调用睡眠5秒（in rcore/ucore tutorial v3: Branch ch1）
+```
+不会，就是不会
+```
+
+qemu的启动位置：似乎是通过reset_vec直接用数组写进去的。
+```C
+uint32_t reset_vec[10] = {
+        0x00000297,                  /* 1:  auipc  t0, %pcrel_hi(fw_dyn) */
+        0x02828613,                  /*     addi   a2, t0, %pcrel_lo(1b) */
+        0xf1402573,                  /*     csrr   a0, mhartid  */
+        0,
+        0,
+        0x00028067,                  /*     jr     t0 */
+        start_addr,                  /* start: .dword */
+        start_addr_hi32,
+        fdt_load_addr,               /* fdt_laddr: .dword */
+        fdt_load_addr_hi32,
+                                     /* fw_dyn: */
+    };
+```
+
+SBI的作用，介于firmware和os之间的一层抽象级，主要的功能是提高可移植性和易用性。
+
+完成了Lab1，实现了彩色输出和print。
+
+### 复盘：
+对于linker部分，尚不够清楚，需要继续阅读框架代码以及示例代码，同时观看代码框架讲解视频。

@@ -222,17 +222,21 @@ for processlist, it contains info about all processes in the system. Each entry 
 #### q1:
 100 % CPU utilization. because I/O is not involved.
 #### q2:
-5 + I/O time.
+4 + I/O time.
 #### q3:
 1 + Max(4, I/O time).
 
 in fact, it counts.
+
+When I/O happens, it will cost a lot of time, the CPU will shift to other instructions to save time.
 #### q4:
 5 + I/O time
+
+The CPU won't work before I/O finishes, therefore it will cost a lot of time.
 #### q5:
 same as q3.
 #### q6:
-run all cpu processes out, then I/O process.
+run all cpu processes out, then I/O process. So basically it waste a lot of resources.
 #### q7:
 act like insert.
 
@@ -241,8 +245,14 @@ cause every time io will take a lot of time.
 random result.
 
 ### API code work
-Done.
-
+#### q2:
+It will be very randomly output the result.
+#### q4：
+using "-p", then you don't have to use "/bin/ls" to give the full path of the command.
+#### q6:
+waitpid is much more flexible than wait.
+#### q7:
+It will only print the parent process, child process won't output the result on the console.
 ## Charpter 6
 virtualize the CPU is based on a very simple idea: run one process for a while, then run another one, and so forth. This is AKA time sharing.
 
