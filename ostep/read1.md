@@ -278,3 +278,48 @@ free memory of process
 remove from process list
 ```
 if we just run a program, how can the OS make sure the program doesn't do anything that we don't want it to do.
+## Problem1: Restricted Operations
+### Two mode:
+1. user mode
+2. kernel mode
+
+syscall -> trap table
+## Problem2: Switching Between Processes
+-> A non-cooperative approach: os frequently regains control.
+
+Easy idea: timer intterrupt.
+
+书中有很详细的context switch过程，大体涉及`user_stack`，`kernel_stack`， `proc_t`三个数据结构，具体可能还是得看看xv6的源码。
+
+### hw：
+1. measurement for the syscall：**microseconds**
+```sh
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./syscall 1000
+average time: 0.428000
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./syscall 10000
+average time: 0.286200
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./syscall 100000
+average time: 0.256380
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./syscall 1000000
+average time: 0.245441
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./syscall 10000000
+average time: 0.051638
+```
+2. measurement for the context switch: **microseconds**
+```sh
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./sched 3
+context switch average time: 48.333333
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./sched 5
+context switch average time: 41.000000
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./sched 10
+context switch average time: 20.900000
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./sched 100
+context switch average time: 4.890000
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./sched 1000
+context switch average time: 4.241000
+link@ubuntu:~/Desktop/ostep-homework/cpu-direx$ ./sched 10000
+context switch average time: 4.735700
+```
+看起来似乎并不那么稳定，不过有一点可以确定，其远远慢于系统调用。
+
+以及，似乎也可以这么解释：如果上下文切换并不频繁，CPU给予的调度优先级也不会那么高，会比较拖延着去做。因此，面对多次context switch的情况，其最终的平均时间会小于较低次数的情况。
