@@ -89,3 +89,46 @@ Skip.
 The time will be longer.
 T_{worst_response} = (N - 1) * T_{quantum}
 ```
+## Scheduling: The Multi-Level FeedBack Queue
+MLFQ: Multi-Level Feedback Queue.
+
+Fundamental Problems:
+1. OS doesn't generally know how long a job will run for.
+2. minimize the response time.
+
+Basic Rules:
+1. If Priority(A) > Priority(B), A runs.
+2. If Priority(A) = Priority(B), A & B run in RR.
+
+### Attempt #1: how to change priority
+3. When a job enters the system, it is placed at the highest priority.
+4. If a job uses up an entire time slice while running, its priority is reduced.
+5. If a job gives up the CPU before the time slice is up, it stays at the same priority level.
+
+### Problems:  
+1. Starvation: if there are "too many" interactive jobs in the system, long-running jobs will never receive any CPU time.
+2. Game the scheduler: near the end of the time slice, trigger an I/O operation.
+3. a program may change its behavior over time.
+
+Note that scheduling policy forms an important part of the security of a system, and should be carefully constructed.
+
+### Attempt #2: Priority Boost
+6. After some time Period S, move all the jobs in the system to the topmost queue.
+
+the Value of S is kinda voo-doo constants. Like Black Magic. (Ousterhout's Law)
+
+### Attempt #3: Better Accounting
+Not simply detect whether the task has used all the time slice or not, but accounting the total time. Let the Scehduler keep track.
+
+Revised Version of Rule4 & Rule5:
+#### Rule 4: Once a job uses up its time allotment at a given level, its priority is reduced.
+
+### Other Issues:
+1. How to Parameterize the scheduler?
+
+varying time-slice length across different queues, high-priority queues -> short time slices, low-priority queues -> long time.
+
+In a system, there is a default parameter sets table.
+
+Other Ideas: **decay-usage algorithms**
+
