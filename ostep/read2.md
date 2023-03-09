@@ -132,3 +132,137 @@ In a system, there is a default parameter sets table.
 
 Other Ideas: **decay-usage algorithms**
 
+### HW:
+1. Run a few randomly-generated problems with just two jobs and two queues; compute the MLFQ execution trace for each. Make your life easier by limiting the length of each job and turning off I/Os.
+```
+link@ubuntu:~/Desktop/ostep-homework/cpu-sched-mlfq$ python3 mlfq.py -s 40 -n 2 -q 1 -j 2 -m 5 -M 0 -c
+Here is the list of inputs:
+OPTIONS jobs 2
+OPTIONS queues 2
+OPTIONS allotments for queue  1 is   1
+OPTIONS quantum length for queue  1 is   1
+OPTIONS allotments for queue  0 is   1
+OPTIONS quantum length for queue  0 is   1
+OPTIONS boost 0
+OPTIONS ioTime 5
+OPTIONS stayAfterIO False
+OPTIONS iobump False
+
+
+For each job, three defining characteristics are given:
+  startTime : at what time does the job enter the system
+  runTime   : the total CPU time needed by the job to finish
+  ioFreq    : every ioFreq time units, the job issues an I/O
+              (the I/O takes ioTime units to complete)
+
+Job List:
+  Job  0: startTime   0 - runTime   2 - ioFreq   0
+  Job  1: startTime   0 - runTime   1 - ioFreq   0
+
+
+Execution Trace:
+
+[ time 0 ] JOB BEGINS by JOB 0
+[ time 0 ] JOB BEGINS by JOB 1
+[ time 0 ] Run JOB 0 at PRIORITY 1 [ TICKS 0 ALLOT 1 TIME 1 (of 2) ]
+[ time 1 ] Run JOB 1 at PRIORITY 1 [ TICKS 0 ALLOT 1 TIME 0 (of 1) ]
+[ time 2 ] FINISHED JOB 1
+[ time 2 ] Run JOB 0 at PRIORITY 0 [ TICKS 0 ALLOT 1 TIME 0 (of 2) ]
+[ time 3 ] FINISHED JOB 0
+```
+2. How would you run the scheduler to reproduce each of the examples in the chapter?
+```
+skip
+```
+3. How would you configure the scheduler parameters to behave justlike a round-robin scheduler?
+```
+simply set -n=1
+```
+
+## Scheduling: Proportional Share
+Instead of optimizing for turnaround or response time, a scheduler might instead try to guarantee that each job obtain percentage of CPU time.
+
+### Lottery scheduling:
+Basically it acts like a random algorithm. For user A and user B, they have 25 and 75 tickets, which is a certificate for their chances of gaining resources next time.
+
+#### Ticket Mechanism:
+1. ticket currency: just look at the account.
+2. ticket transfer: transfer my tickets to the user I want to act some operations at once.
+3. ticket inflation: change my own ticket number when facing different tasks. (for boosting or other purpose)
+#### Implementation
+```C
+int counter = 0;
+int winner = getrandom(0, totaltickets);
+node_t *current = head;
+while (current) {
+  counter = counter + current->tickets;
+  if (counter > winner) 
+    break;
+  current = current->next;
+}
+```
+Lottery goals: form a perfectly fair scheduler, which would achieve F = 1.
+
+F is simply the time the first job completes divided by the time that the second job completes.
+
+From the figure 9.2, we can see that when job length is very long, the fairness will be very close to 1.
+### Stride Scheduling:
+As we saw above, while randomness gets us a simple scheduler, it occasionally will not deliver the exact right proportions, especially over short time scales. That's the reason why we invented stride scheduling.
+
+Stride scheduling:
+1. compute each job's stride. (1 / tickets)
+2. find the job that has the smallest progress so far.
+3. so on.
+
+```c
+curr = remove_min(queue); // pick client with min pass
+schedule(curr); // run for quantum
+curr->pass += curr->stride; // update pass using stride
+insert(queue, curr); // return curr to queue
+```
+Stride has shown very good fairness, so why we still use Lottery scheduling sometimes?
+
+reasons are easy. When a new job enters, it will monopolize the CPU, which will do lots of harm.
+### Linux Completely Fair Scheduler
+CFS spends little time making scheduling decisions.
+#### Basic Operation
+Using **virtual runtime(vruntime)**. For each process, accumulates `vruntime`. The `vruntime` increases at the same rate, in proportion with physical time. CFS will always pick the process with the lowest vruntime to run next.
+
+**Tension:** when switches happen quite often, the fairness will be increased. Otherwise, the preformance is increased when switches happens less often.
+
+`sched_latency` is a parameter to determine how long one process should run before considering a switch.
+
+$Timeslice = sched_latency / n, n = processesnumber$
+
+`min_granularity` is usually set to a value like 6 ms. CFS will never set the time slice of a process to less than this value, ensuring that not too much time is spent in scheduling overhead.(to avoid too many processes dividing sched_latency into too small pieces)
+
+#### Weighting(Niceness)
+The priority: -20 ~ +19. With a default of 0.
+
+negative values imply higher priority. If you are too nice, you just don't get as much scheduling attention.
+```C
+static const int prio_to_weight[40] = {
+  /*-20*/ 88761, 71755, 56483, 46273, 36291,
+  /*-15*/ 29154, 23254, 18705, 14949, 11916,
+  /*-10*/  9548,  7620,  6100,  4904,  3906,
+  /*-5*/  3121,  2501,  1991,  1586,  1277,
+  /*0*/  1024,   820,   655,   526,   423,
+  /*5*/   335,   272,   215,   172,   137,
+  /*10*/   110,    87,    70,    56,    45,
+  /*15*/    36,    29,    23,    18,    15,
+};
+// roughly 3 times multi for weights that have difference equals 5. 
+```
+The weights allow us to compute the effective time slice of each process. Assume here we have n processes.
+$$time\_slice_k = \frac{weight_k}{\sum^{n-1}_{i = 0} weight_i} * sched\_latency$$
+
+#### Using Red-Black Trees
+Having 1000 processes running at the same time is a very common situation. So apparently using list to manage is a nightmare.
+
+CFS addresses this by keeping processes in a red-black tree. Only running processes are kept therein. If a process goes to sleep, it is removed from the tree and kept track of elsewhere.
+
+O(log N) hahaha. for searching/removing/inserting etc.
+#### Dealing with I/O and sleeping Processes
+For jobs that have slept for a long time, to avoid monoplizing the CPU, CFS will set the vruntime of that job to the minimum value found in the Red-Black tree.
+
+However, that means the job slept for a while won't be treated fairly. That's the cost.
