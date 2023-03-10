@@ -171,3 +171,105 @@ other ways, embed with arguments of function.
 ((acc 'some-other-password 'deposit) 50)
 ((acc 'some-other-password 'deposit) 50)
 ```
+### 3.1.2
+assume we have a procedure `rand-update`.
+```scheme
+; random-init is a fixed local value.
+(define rand 
+    (let ((x random-init))
+        (lambda ()
+            (set! x (rand-update x))
+            x
+        )
+    )
+)
+```
+
+#### Monte Carlo simulation: 
+choosing sample experiments at random from a large set and then making deductions on the basis of the probabilities estimated from tabulating the results of those experiments.
+
+```scheme
+(define (estimate-pi trials)
+    (sqrt (/ 6 (monte-carlo trials cesaro-test)))
+)
+(define (cesaro-test)
+    (= (gcd (rand) (rand)) 1)
+)
+(define (monte-carlo trials experiment)
+    (define (iter trails-remaining trails-passed)
+        (cond ((= trails-remaining 0) (/ trails-passed trials))
+              ((experiment) (iter (- trails-remaining 1) (+ trails-passed 1)))
+              (else (iter (- trails-remaining 1) trails-passed))
+        )
+    )
+    (iter trails 0)
+)
+```
+Other way of monte-carlo in the SICP book Betrays some painful breaches of modularity.
+### ex3.5
+```scheme
+; Here we assume the rectangle is formed by the diagonal lineL: (0, 0) -> (1, 1). So the squre of the rectangle is relative easy to compute.
+
+; stackoverflow: a way to generate random.
+(define random
+  (let ((a 69069) (c 1) (m (expt 2 32)) (seed 19380110))
+    (lambda new-seed
+      (if (pair? new-seed) ; if (random x)
+          (set! seed (car new-seed))
+          (set! seed (modulo (+ (* seed a) c) m)))
+      (/ seed m))))
+
+; random-in-range (btw, in a simplified case we won't use this function)
+(define (rand-range . args)
+  (cond ((= (length args) 1)
+          (* (random) (car args)))
+        ((= (length args) 2)
+          (+ (car args) (* (random) (- (cadr args) (car args)))))
+        (else (error 'randint "usage: (randint [lo] hi)"))))
+
+; form a point in the rectangle.
+(define (point x y)
+    (cons x y)
+)
+
+(define (distance point)
+    (sqrt (+ (* (car point) (car point)) (* (cdr point) (cdr point))))
+)
+
+(define (insideornot point)
+    (define dist (distance point))
+    (if (> dist 1)
+        #f ;; outside of the circle.
+        #t ;; inside the circle.
+    )
+)
+
+(define (circle-test)
+    (define test-point (point (random) (random)))
+    (insideornot test-point)
+)
+
+;; trails: number of tests.
+(define (monte-carlo trials experiment)
+    (define (iter trails-remaining trails-passed)
+        (cond ((= trails-remaining 0) (/ trails-passed trials))
+              ((experiment) (iter (- trails-remaining 1) (+ trails-passed 1)))
+              (else (iter (- trails-remaining 1) trails-passed))
+        )
+    )
+    (iter trials 0)
+)
+
+; compute the size of 1/4 circle.
+(define (estimate-pi trials)
+    (* 4 (monte-carlo trials circle-test))
+)
+
+;result is shown below
+<!-- 
+> (estimate-pi 1000)
+3 + 11/50
+> (estimate-pi 1000000)
+3 + 8713/62500 
+-->
+```
