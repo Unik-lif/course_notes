@@ -273,3 +273,33 @@ Other way of monte-carlo in the SICP book Betrays some painful breaches of modul
 3 + 8713/62500 
 -->
 ```
+### ex3.6
+```scheme
+(define (r)
+    (let ((a 69069) (c 1) (m (expt 2 32)) (seed 19380110))
+        (define (dispatch text)
+            (cond ((eq? text 'generate) (begin (set! seed (modulo (+ (* seed a) c) m)) (/ seed m)))
+                  ((eq? text 'reset) (lambda (newseed) (set! seed newseed)))
+                  (else (error "error operations!" text))
+            )
+        ) 
+        dispatch
+    )
+)
+; very interesting task! mind the usage of dispatch, what r should return should be a function that has its stack value kept in the stack frame.
+; Else, the change for the seed won't occur!
+(define random (r))
+(random 'generate)
+((random 'reset) 23)
+(random 'generate)
+((random 'reset) 33)
+(random 'generate)
+
+#|  
+    (lambda new-seed
+      (if (pair? new-seed) ; if (random x)
+          (set! seed (car new-seed))
+          (set! seed (modulo (+ (* seed a) c) m)))
+      (/ seed m)))) 
+|#
+```
