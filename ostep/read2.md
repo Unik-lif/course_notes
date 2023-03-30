@@ -232,7 +232,7 @@ Using **virtual runtime(vruntime)**. For each process, accumulates `vruntime`. T
 
 `sched_latency` is a parameter to determine how long one process should run before considering a switch.
 
-$Timeslice = sched_latency / n, n = processesnumber$
+$Timeslice = schedlatency / n, n = processesnumber$
 
 `min_granularity` is usually set to a value like 6 ms. CFS will never set the time slice of a process to less than this value, ensuring that not too much time is spent in scheduling overhead.(to avoid too many processes dividing sched_latency into too small pieces)
 
@@ -266,3 +266,6 @@ O(log N) hahaha. for searching/removing/inserting etc.
 For jobs that have slept for a long time, to avoid monoplizing the CPU, CFS will set the vruntime of that job to the minimum value found in the Red-Black tree.
 
 However, that means the job slept for a while won't be treated fairly. That's the cost.
+
+#### HW:
+fairly easy. We skip it.

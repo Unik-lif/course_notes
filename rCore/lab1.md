@@ -102,7 +102,128 @@ uint32_t reset_vec[10] = {
 
 SBI的作用，介于firmware和os之间的一层抽象级，主要的功能是提高可移植性和易用性。
 
-完成了Lab1，实现了彩色输出和print。
+完成了Lab1，实现了彩色输出和print。但是代码很丑很丑（还真是），直接添加了`logging.rs`声明宏定义来制作。丑的不在话下。
+### 一个相对优雅的实现：
+参考`CH1`中的代码，我们在注释之中简单解读之：
+```rust
+/*！
+本模块利用 log crate 为你提供了日志功能，使用方式见 main.rs.
+*/
+
+
+use log::{self, Level, LevelFilter, Log, Metadata, Record};
+
+struct SimpleLogger; // 面向对象的思想，SimpleLogger作为最终的处理者。
+
+// 为SimpleLogger添加Log特性，Log特性则包含三个函数的简单实现。
+// 1. enabled: 判定某一类型是否支持通过log输出
+// 2. log: 决定某一类型以何种方式输出
+// 3. flush: 刷新缓存中的Records内容
+// ----------------------------------------------
+// 在有Level和LevelFilter机制的时候，允许采用有优先级的log通知方式。
+impl Log for SimpleLogger {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
+        true
+    }
+    fn log(&self, record: &Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        // Level()其实和Record.metadata().level()是一样的。
+        let color = match record.level() {
+            Level::Error => 31, // Red
+            Level::Warn => 93,  // BrightYellow
+            Level::Info => 34,  // Blue
+            Level::Debug => 32, // Green
+            Level::Trace => 90, // BrightBlack
+        };
+        println!(
+            "\u{1B}[{}m[{:>5}] {}\u{1B}[0m",
+            color,
+            record.level(),
+            record.args(), // 经典println所用的参数打印封装方式
+        );
+    }
+    fn flush(&self) {}
+}
+
+pub fn init() {
+    static LOGGER: SimpleLogger = SimpleLogger; // 第一个SimpleLogger是先前设置的struct，第二个SimpleLogger是后面声明的类型。
+    log::set_logger(&LOGGER).unwrap();
+    log::set_max_level(match option_env!("LOG") { // 根据输入的参数，即LOG=X，来决定选用的LevelFilter权限级。
+        Some("ERROR") => LevelFilter::Error,
+        Some("WARN") => LevelFilter::Warn,
+        Some("INFO") => LevelFilter::Info,
+        Some("DEBUG") => LevelFilter::Debug,
+        Some("TRACE") => LevelFilter::Trace,
+        _ => LevelFilter::Off,
+    });
+}
+
+// example in rust docs:
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+   fn enabled(&self, metadata: &log::Metadata) -> bool {
+       true
+   }
+
+   fn log(&self, record: &log::Record) {
+       if !self.enabled(record.metadata()) {
+           return;
+       }
+
+       println!("{}:{} -- {}",
+                record.level(),
+                record.target(),
+                record.args());
+   }
+   fn flush(&self) {}
+}
+```
 
 ### 复盘：
 对于linker部分，尚不够清楚，需要继续阅读框架代码以及示例代码，同时观看代码框架讲解视频。
+
+但看样子这讲的不是很好诶。。似乎是在念tutorial。
+
+不过现在看懂了。
+### 吐槽
+对于`linker`不是很懂。
+
+希望能够在程序员的自我修养一书中得到答案。
+
+### 补充知识：
+应用程序执行环境利用**函数调用**去使用标准库的内容，标准库函数依赖于**系统调用**，系统调用依赖于内核与操作系统提供的接口，而内核与操作系统则基于**指令集**在硬件平台上搭建起来。
+
+Rust编译器利用**目标三元组**来描述一个软件运行的目标平台，利用`verbose`可以实现三元组的查看：
+```
+rustc --version --verbose
+```
+终端将会返回`host`，`rust-release`，`LLVM version`三元组信息。`host`表示默认的目标平台是什么。
+
+`.cargo`的作用，调整`cargo`工具在项目目录下的行为。设置其`target = "riscv64gc-unknown-none-elf"`，本质上是一种交叉编译的行为。
+
+对于下面的代码对`linker.ld`中的段的调用，很有可能是链接器本身在C中的一些性质。建议去尝试了解。
+```C
+extern "C" {
+    fn sbss();
+    fn ebss();
+}
+(sbss as usize..ebss as usize).for_each(|a| {
+    unsafe { (a as *mut u8).write_volatile(0) }
+});
+```
+chatgpt是怎么说的？
+```
+链接器（Linker）是一个重要的系统工具，它负责将多个目标文件（Object File）或静态库文件（Static Library）合并成一个可执行文件（Executable File）或共享库文件（Shared Library），并分配好程序在内存中的布局。
+
+链接器通常需要一个链接器脚本文件（Linker Script），用于指定程序在内存中的布局。链接器脚本文件中会定义一些符号，如 sbss 和 ebss，用于表示程序数据段的开始和结束位置，以及 bss 段的开始位置。
+
+在 C 语言中，我们可以通过声明 extern int sbss; 和 extern int ebss; 来引用这些符号，然后通过 &sbss 和 &ebss 取得它们的地址。因为 C 语言本身就支持使用外部符号来进行符号地址的引用和调用，所以我们可以在 C 语言中直接使用这些符号。
+
+类似地，在 Rust 中，我们可以使用 extern "C" 关键字来声明一个外部的 C 函数，从而实现与 C 语言的互操作。这样，在 Rust 代码中就可以直接调用 sbss 和 ebss 符号所代表的函数地址，从而实现对这些内存区域的访问。
+
+总的来说，链接器脚本文件定义的符号可以被多个编程语言共享和使用，只要这些编程语言都支持使用外部符号来进行符号地址的引用和调用。这就是为什么 C 语言和 Rust 代码都可以使用链接器脚本文件中定义的符号的原因。
+```
+也就是说，这其实是源于C的一些性质。
