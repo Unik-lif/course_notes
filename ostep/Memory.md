@@ -118,3 +118,56 @@ Valgrind & Purify.
 'malloc' is a lib function based on 'brk' and 'sbrk' syscalls, and it is also a relatively portable API for users.
 
 'mmap' call: map a file/device into the memory.
+
+### HW:
+1. Segmentation fault.
+2. First of all, I can't set breakpoints, secondly, gdb will cause a SIGSEGV fault.
+3. Valgrind detect where the fault it is.
+```
+ 19 ==12747== Process terminating with default action of signal 11 (SIGSEGV)
+ 18 ==12747==  Access not within mapped region at address 0x0
+ 17 ==12747==    at 0x109151: printf (stdio2.h:112)
+ 16 ==12747==    by 0x109151: main (null.c:7)
+ 15 ==12747==  If you believe this happened as a result of a stack
+ 14 ==12747==  overflow in your program's main thread (unlikely but
+ 13 ==12747==  possible), you can try to increase the size of the
+ 12 ==12747==  main thread stack using the --main-stacksize= flag.
+ 11 ==12747==  The main thread stack size used in this run was 8388608.
+```
+4. 需要把优化开的比较低，编译器可能会优化掉从而让即便没有free也不会造成内存上的泄露。
+5. 100显然是超出范围了。Out of scope.
+6. This can run, but of no sense. Valgrind can detect this error.
+7. This will be an invaild pointer.
+
+Other problems we will skip... :)
+## Mechanism: Address Translation
+Virtualizing memory goals:
+1. efficiency.
+2.  control while providing the desired virtualization.
+
+General Idea: hardware-based address translation. -> redirect application virtual memory references to their actual locations in memory.
+
+From the program's perspective, its address space starts at address 0 and grows. But the OS won't necessarily put them into address space starting at 0.
+
+### Simple idea: Base & Bound.
+Need two hardware registers within each CPU, one is called the base register, and the other the bounds. This pair is going to allow us to place the address space anywhere we'd like in physical memory, and do sso while ensuring that the process can only access its own address space. (can't access others' space).
+
+$Physical \_ address = Virtual \_address + base$
+
+**Relocation:** Translate VA to PA. This happens at runtime, so even after the process has started running, this will also work well.
+
+base and bound registers are hardware structures kept on the chip, **and one pair per CPU.** The hardware conduct translation is always called MMU.
+
+To support Base & Bound ability, 5 traits should be added for hardwares:
+1. Privileged mode.
+2. Base/Bounds registers.
+3. Ability to translate virtual addresses and check if within bounds.
+4. Privileged instructions to update base/bounds.
+5. Ability to raise exceptions.
+
+What OS can do?
+1. Memory management.
+2. Base/Bounds management. -> restore/save.
+3. Exception handling.
+
+Bad parts: To inefficent. -> Internal fragmentation.
