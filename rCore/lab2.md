@@ -36,3 +36,49 @@ RISCV存在部分特权指令，以S模式为例，一般有两类：
 实现应用程序的出发点：
 1. 应用程序的内存布局
 2. 应用程序发出的系统调用如何处理
+
+### 代码解读：
+1. base_address被写进了build.py这个脚本中，因此在linker.ld中似乎没有看到0x80400000的值。（对应版本rCore-2023S）
+2. 关于APP_MANAGER：参考alpha.1文档
+```rust
+lazy_static! {
+    static ref APP_MANAGER: UPSafeCell<AppManager> = unsafe { UPSafeCell::new({
+        extern "C" { fn _num_app(); }
+        let num_app_ptr = _num_app as usize as *const usize;
+        let num_app = num_app_ptr.read_volatile();
+        let mut app_start: [usize; MAX_APP_NUM + 1] = [0; MAX_APP_NUM + 1];
+        let app_start_raw: &[usize] =  core::slice::from_raw_parts(
+            num_app_ptr.add(1), num_app + 1
+        );
+        app_start[..=num_app].copy_from_slice(app_start_raw);
+        AppManager {
+            num_app,
+            current_app: 0,
+            app_start,
+        }
+    })};
+}
+```
+num_app + 1: 把最后一位停下来的app地址也计量进去。
+
+num_app_ptr.add(1): APP_MANAGER的第一个参数是app总数，从第二个参数开始才是相关的应用程序地址。
+3. lazy_static!：对于全局变量的初始化在第一次被使用到的时候才进行，所以lazy这一描述是精准的。
+4. asm!("fence.i"): 有多个应用程序在运行，为了防止不一致的情况，需要对指令缓存进行清空，设置该指令即完成一个屏障作用。
+### 特权级切换：
+批处理操作系统应用程序执行环境：
+1. 启动应用程序的时候，初始化应用程序的用户态上下文，并切换到用户态。
+2. 应用程序发起系统调用，让批处理操作系统来处理。
+3. 应用程序执行出错，则杀死，加载运行下一个应用。
+4. 执行结束后，从操作系统中加载下一个应用。
+
+我们在编写运行在 S 特权级的批处理操作系统中的 Trap 处理相关代码的时候，就需要使用如下所示的 S 模式的 CSR 寄存器。
+
+进入 S 特权级 Trap 的相关 CSR
+
+| CSR 名 | 该 CSR 与 Trap 相关的功能 |
+| - | - |
+| sstatus | SPP 等字段给出 Trap 发生之前 CPU 处在哪个特权级（S/U）等信息 |
+| sepc | 当 Trap 是一个异常的时候，记录 Trap 发生之前执行的最后一条指令的地址 |
+| scause | 描述 Trap 的原因 |
+| stval | 给出 Trap 附加信息 |
+| stvec | 控制 Trap 处理代码的入口地址|
