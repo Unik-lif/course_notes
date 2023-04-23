@@ -38,3 +38,14 @@ Whether MSB is equal to 1 or not.
 Refer to P102 in the chapter 10. Great importance.
 
 mscratch -> great importance.
+
+#### Handle traps:
+What CPU will do when trap happens?
+1. `sstatus` 'MPP' will store the current Privilege.
+2. `sepc` store the address of instruction after the trap.
+3. `scause`: store the trap reason. `stval`: store additional info.
+4. CPU jump to `stvec`, where the trap handler entry locates. Switch current privilege to S-mode, start to execute.
+5. Handle traps.
+6. set the current Privilege to `sstatus`.
+7. CPU jump to address of `sepc`, continue to execute.
+
