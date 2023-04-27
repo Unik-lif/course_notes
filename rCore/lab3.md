@@ -179,6 +179,13 @@ https://nju-projectn.github.io/ics-pa-gitbook/ics2020/4.2.html
   2     time::read()
   3 }
 ```
+异常将会在trap handler里体现：
+```rust
+67          Trap::Interrupt(Interrupt::SupervisorTimer) => {
+  1             set_next_trigger();
+  2             suspend_current_and_run_next();
+  3         }
+```
 #### 运行程序：run_first_task
 在做好了前述的准备后，我们开始运行相关的应用程序。
 ```rust
@@ -316,3 +323,95 @@ https://nju-projectn.github.io/ics-pa-gitbook/ics2020/4.2.html
 从`__restore`处通过`sret`返回，然后执行完退出后走`syscall`给捕获到，和`LAB2`后续处理流程一样，完事儿了。
 ### 其他需要解答的问题：
 但是还有个功能我们没有细说，交给明天吧阿巴巴打夺夺。
+
+剩下的部分请参考文档：http://rcore-os.cn/rCore-Tutorial-Book-v3/chapter3/3multiprogramming.html#sys-yield-sys-exit ，此处有较为详细的描述，我就不赘述了。
+
+目光主要聚焦在函数`exit_current_and_run_next`和`suspend_current_and_run_next`上，随意跟踪之即可。
+
+每个`APP`都拥有一个内核栈。
+```rust
+ 14 static KERNEL_STACK: [KernelStack; MAX_APP_NUM] = [KernelStack {
+ 15     data: [0; KERNEL_STACK_SIZE],
+ 16 }; MAX_APP_NUM];
+ 17
+ 18 static USER_STACK: [UserStack; MAX_APP_NUM] = [UserStack {
+ 19     data: [0; USER_STACK_SIZE],
+ 20 }; MAX_APP_NUM];
+```
+
+此处的`next`源于一开始声明时的`tasks`数组的排布：
+```rust
+  6     fn run_next_task(&self) {
+  5         if let Some(next) = self.find_next_task() {
+  4             let mut inner = self.inner.exclusive_access();
+  3             let current = inner.current_task;
+  2             inner.tasks[next].task_status = TaskStatus::Running;
+  1             inner.current_task = next; // note here!
+126             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
+  1             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+  2             drop(inner);
+  3             // before this, we should drop local variables that must be dropped manually
+  4             unsafe {
+  5                 __switch(current_task_cx_ptr, next_task_cx_ptr);
+  6             }
+  7             // go back to user mode
+  8         } else {
+  9             panic!("All applications completed!");
+ 10         }
+ 11     }
+```
+
+### 实验实现思路：
+拓展全局变量`TASK_MANAGER`的接口，以使得其能够返回必要的信息以填充`TASK_INFO`信息。
+```rust
+ 24     /// accumulate syscall_times due to sycall number i.
+ 23     /// Will be called in src/syscall/process.rs
+ 22     fn add_one_syscall(&self, sys_num: usize) {
+ 21         let mut inner = self.inner.exclusive_access();
+ 20         let current = inner.current_task;
+ 19         inner.tasks[current].taskinfo.syscall_times[sys_num] += 1;
+ 18     }
+ 17
+ 16     /// Pass the pointer of the current task info.
+ 15     fn pass_syscall_info(&self) -> SyscallInfo {
+ 14         let inner = self.inner.exclusive_access();
+ 13         let current = inner.current_task;
+ 12         inner.tasks[current].taskinfo
+ 11     }
+ 10
+  9     /// Pass the status of the current task.
+  8     fn pass_task_status(&self) -> TaskStatus {
+  7         let inner = self.inner.exclusive_access();
+  6         let current = inner.current_task;
+  5         inner.tasks[current].task_status
+  4     }
+```
+函数`add_one_syscall`将会放置在系统调用之前，以在相应的桶中进行系统调用数目的统计。
+
+延拓`TCB`控制块，以使得其能够存储系统调用信息和相关的时间。
+```rust
+ 10 #[derive(Copy, Clone)]
+  9 pub struct TaskControlBlock {
+  8     /// The task status in it's lifecycle
+  7     pub task_status: TaskStatus,
+  6     /// The task context
+  5     pub task_cx: TaskContext,
+  4     /// Lab1: The task info
+  3     pub taskinfo: SyscallInfo,
+  2 }
+
+  8 /// Lab1: my taskinfo.
+  7 /// The syscall info of a task.
+  6 #[derive(Copy, Clone)]
+  5 pub struct SyscallInfo {
+  4     /// The numbers of syscall called by task
+  3     pub syscall_times: [u32; MAX_SYSCALL_NUM],
+  2     /// Total running time of a task.
+  1     pub time: usize,
+38  }
+```
+`rust.vim`和`systansitic`插件可以让编译过得很轻松，这里爆赞！
+
+提供了这些接口后，任务就很容易了。
+
+完事了。吐槽一点，如果不叫报告，你过不了`ci-test`，太好笑了。
