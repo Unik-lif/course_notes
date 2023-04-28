@@ -171,3 +171,39 @@ What OS can do?
 3. Exception handling.
 
 Bad parts: To inefficent. -> Internal fragmentation.
+
+## Segmentation:
+Basically using base & bound in a large memory space will cause great waste, given that the process demands the entire address space be resident in memory.
+
+So that is Segmentation, a generalized Base & Bounds method. Instead of having just one base and bounds pair in our MMU, why not have a base and bounds pair per logical segment of the address space? This will mitigate internal fragmentation.
+
+As an example:
+```
+-------------------- 0 kB
+|        OS        |
+-------------------- 16 kB
+|        ^         |
+--------------------  
+|      stack       |
+--------------------
+|     not used     |
+--------------------
+|       code       |
+--------------------
+|       heap       |
+-------------------
+|        |         |
+-------------------- 48 kB
+|      not used    |
+-------------------- 64 kB
+```
+in the MMU, we can therefore maintain a table.
+
+|Segment|Base|Size|
+|-|-|-|
+|code|32k| 2k|
+|heap|34k|3k|
+|stack|28k|2k|
+
+When the code access out-of-bound memory, it will cause segmentation fault. **AND THE TERM PERSISTS.**
+
