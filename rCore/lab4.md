@@ -50,7 +50,7 @@ http://rcore-os.cn/rCore-Tutorial-Book-v3/chapter4/1rust-dynamic-allocation.html
   1     panic!("Unreachable in rust_main!");
   2 }
 ```
-#### 虚拟内存：
+#### 虚拟内存初始化：
 虚拟内存的初始化主要分为两个部分，首先对堆进行初始化，其次对`frame_allocator`进行初始化，我们尝试逐一分析之。
 ```rust
   5 /// initiate heap allocator, frame allocator and kernel space
@@ -457,6 +457,9 @@ MapArea -> vpn_range: VPNRange
  10             sbss_with_stack as usize, ebss as usize
  11         );
  12         info!("mapping .text section");
+ ```
+- 在`memory_set`中压入各个段落的物理地址，在`push`的时候同时完成虚拟地址与物理地址的映射。
+ ```rust
  13         memory_set.push(
  14             MapArea::new(
  15                 (stext as usize).into(),
@@ -509,6 +512,86 @@ MapArea -> vpn_range: VPNRange
  21         memory_set
  20     }
  ```
+为了搞清楚这一点，我们需要对`memory_set`的`push`操作和`MapArea`的初始化操作做一些简单的分析，不过在此之前，我们简单看一下`MemorySet`的数据结构：
+
+我们注意到，内存集由两个部分组成，其一是我们之前花了很大力气去描述的页表，其二即是这边需要记录的被映射的区域单元信息，`rCore`用`MapArea`来表示这一部分单元信息。
+```rust
+ 36 /// address space
+ 35 pub struct MemorySet {
+ 34     page_table: PageTable,
+ 33     areas: Vec<MapArea>,
+ 32 }
+    // in impl MemorySet:
+  1     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+  2         // MapArea.map function
+            map_area.map(&mut self.page_table);
+            // 反正目前似乎引来的都是None，无所谓。
+  3         if let Some(data) = data {
+  4             map_area.copy_data(&mut self.page_table, data);
+  5         }
+            // 评价为有个Vec在这里，所以该行为确实需要。
+  6         self.areas.push(map_area);
+  7     }
+```
+```rust
+// MapArea.map
+// 根据注释，我们知道MapArea用于控制虚拟内存的连续性片段
+  1 /// map area structure, controls a contiguous piece of virtual memory
+  2 pub struct MapArea {
+  3     vpn_range: VPNRange,
+  4     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+  5     map_type: MapType,
+  6     map_perm: MapPermission,
+  7 }
+  8
+  9 impl MapArea {
+        // 首先尝试解析上面提到的new的参数问题，还是比较直接的。
+ 10     pub fn new(
+ 11         start_va: VirtAddr,
+ 12         end_va: VirtAddr,
+ 13         map_type: MapType, // 共两种类型，Identical or Framed.
+ 14         map_perm: MapPermission, // RWXU存放权限的位置，对应作用不知和前述的页表有什么区别 -> 没有区别，不过记住一个流程，虚拟页建立时带着它的权限，再去寻找空闲的物理页，把二者的映射建立起来即可。
+ 15     ) -> Self {
+ 16         let start_vpn: VirtPageNum = start_va.floor();
+ 17         let end_vpn: VirtPageNum = end_va.ceil();
+ 18         Self {
+ 19             vpn_range: VPNRange::new(start_vpn, end_vpn), // 仅仅是用SimplerRange<VirtPageNum>这样的东东做了一个封装，表示虚拟内存所控制的范围。
+ 20             data_frames: BTreeMap::new(), // Rust特有的BTreeMap结构
+ 21             map_type, // 在作为参数时直接写入
+ 22             map_perm, // 在作为参数时直接写入
+ 23         }
+ 24     }
+ 35     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+            // 我们应该回去调用page_table.map函数（确实）
+ 34         let ppn: PhysPageNum;
+            // 映射类型的检查，如果是Identical，似乎就不需要映射了，而是直接连接上，这是最朴素的方法了。
+            // 如果是Framed类型，说明确实需要一个像样的映射方法，这时候就向FRAME_ALLOCATOR请求帮助，利用frame_alloc()搞来一个物理页就好了。
+ 33         match self.map_type {
+ 32             MapType::Identical => {
+ 31                 ppn = PhysPageNum(vpn.0);
+ 30             }
+ 29             MapType::Framed => {
+ 28                 let frame = frame_alloc().unwrap();
+ 27                 ppn = frame.ppn;
+ 26                 // 分配了Frames，要在MapArea中记录信息
+                    self.data_frames.insert(vpn, frame);
+ 25             }
+ 24         }
+            // 把flags搞到，准备进行映射
+ 23         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+ 22         page_table.map(vpn, ppn, pte_flags);
+ 21     }
+ 13     pub fn map(&mut self, page_table: &mut PageTable) {
+            // 遍历一遍在vpn_range中出现过的全部虚拟页号。
+ 12         for vpn in self.vpn_range {
+ 11             self.map_one(page_table, vpn);
+ 10         }
+  9     }
+  }
+```
+
+#### 虚拟内存重映射测试：
+对应的函数为`mm::remap_test()`。
 
 ------------------------------------------
 
