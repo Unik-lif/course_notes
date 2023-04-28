@@ -137,10 +137,13 @@ http://rcore-os.cn/rCore-Tutorial-Book-v3/chapter4/1rust-dynamic-allocation.html
 ```
 其中的`current`和`end`存储的是左物理页号和右物理页号，猜测作为栈的内存在分配上即便是在物理内存上也是连续的，`recycled`到底是何含义暂且不知。
 
-`MEMORY_END`大小为`0x88000000`，是内存结束的地方。猜测上面的`PhysAddr`根据物理地址和`RV64`中物理页大小去标准化（指按照页去选取）相应的物理起始与结束地址。是时候看一看文档对于相关情况的背景介绍了。
+`MEMORY_END`大小为`0x88000000`，是内存结束的地方。我们通过跑程序，可以发现`ekernel`的大小大概是`0x82273000`。特别的，在我们打印这些信息的时候，我们并没有启动虚拟内存转换器，因此这里反映的值显然是物理地址。
+
+猜测上面的`PhysAddr`根据物理地址和`RV64`中物理页大小去标准化（指按照页去选取）相应的物理起始与结束地址。是时候看一看文档对于相关情况的背景介绍了。
 
 -----------------------
-### 地址空间章节
+**地址空间章节**
+
 `MMU`是内存管理单元，其可以自动地将虚拟地址进行地址转换变为一个物理地址，即这个应用的数据/指令的物理内存位置。
 
 每个应用的地址空间均存在着一个从虚拟地址到物理地址的映射关系，对于不同的应用来说，这个映射关系可能是不同的，即`MMU`可能会将来自不同两个应用地址空间的相同地址转换成不同的物理地址。
@@ -152,9 +155,13 @@ http://rcore-os.cn/rCore-Tutorial-Book-v3/chapter4/1rust-dynamic-allocation.html
 演变流程：
 
 Base & Bound -> Segmentation -> Page mechanism.
-### SV39多级页表
+
+**SV39多级页表**
+
 在阅读之前，我们看看官方手册。
-#### 手册内容
+
+**手册内容**
+
 `satp`寄存器是一个长度为`SXLEN-bit`的读写寄存器，在`SXLEN-bit`分别为`32`和`64`时，其结构分别如下所示：
 ```
      31    30        22 21            0
@@ -199,3 +206,310 @@ ASID and the page table base address will be stored in the same CSR to allow the
 Page tables contain $2^{9}$ page table entries, eight bytes each.
 
 -----------------------------------------
+简单打印先前的一些地址信息如下：
+```shell
+[TRACE] [kernel] .text [0x80200000, 0x8020d000)
+[DEBUG] [kernel] .rodata [0x8020d000, 0x80212000)
+[ INFO] [kernel] .data [0x80212000, 0x80262000)
+[ WARN] [kernel] boot_stack top=bottom=0x80272000, lower_bound=0x80262000
+[ERROR] [kernel] .bss [0x80272000, 0x82273000)
+[ INFO] .text [0x80200000, 0x8020d000)
+[ INFO] .rodata [0x8020d000, 0x80212000)
+[ INFO] .data [0x80212000, 0x80262000)
+[ INFO] .bss [0x80262000, 0x82273000)
+[ INFO] mapping .text section
+[ INFO] mapping .rodata section
+[ INFO] mapping .data section
+[ INFO] mapping .bss section
+[ INFO] mapping physical memory
+```
+理解了`RISCV`针对`Sv39`的相关内存布置后，这一部分源码理解起来很容易，我们找找源代码中比较有趣的例子做分析：
+```rust
+ 22 impl From<VirtAddr> for usize {
+ 21     fn from(v: VirtAddr) -> Self {
+ 20         if v.0 >= (1 << (VA_WIDTH_SV39 - 1)) {
+ 19             v.0 | (!((1 << VA_WIDTH_SV39) - 1))
+ 18         } else {
+ 17             v.0
+ 16         }
+ 15     }
+ 14 }
+```
+这部分代码的核心理念，其实在于把`usize`转化成虚拟地址时针对第`38`位在`Sv39`中的特殊意义做了一些加工（`63 rd ~ 39 th bit` equals to `38 th bit`）。
+
+下面这部分代码说白了就是根据`4 KB`的页大小考虑选取页有关`floor, ceil`的事宜，没什么好讲的。
+```rust
+ 26 /// virtual address impl
+ 25 impl VirtAddr {
+ 24     /// Get the (floor) virtual page number
+ 23     pub fn floor(&self) -> VirtPageNum {
+ 22         VirtPageNum(self.0 / PAGE_SIZE)
+ 21     }
+ 20
+ 19     /// Get the (ceil) virtual page number
+ 18     pub fn ceil(&self) -> VirtPageNum {
+ 17         VirtPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
+ 16     }
+ 15
+ 14     /// Get the page offset of virtual address
+ 13     pub fn page_offset(&self) -> usize {
+ 12         self.0 & (PAGE_SIZE - 1)
+ 11     }
+ 10
+  9     /// Check if the virtual address is aligned by page size
+  8     pub fn aligned(&self) -> bool {
+  7         self.page_offset() == 0
+  6     }
+  5 }
+```
+----------------------------
+我们继续分析原来的代码，因此可以推测下面这一串代码是以`ekernel`和`memory_end`地址作为物理页的最大范围，之后的虚拟内存和栈帧分配应该会是在这样一个物理页范围内执行相应的操作。
+```rust
+  2     FRAME_ALLOCATOR.exclusive_access().init(
+  3         PhysAddr::from(ekernel as usize).ceil(),
+  4         PhysAddr::from(MEMORY_END).floor(),
+  5     );
+```
+##### KENREL_SPACE相应的操作
+```rust
+  5 /// initiate heap allocator, frame allocator and kernel space
+  4 pub fn init() {
+  3     heap_allocator::init_heap();
+  2     frame_allocator::init_frame_allocator();
+  1     KERNEL_SPACE.exclusive_access().activate();
+28  } 
+```
+我们完成了堆的初始化，也完成了用于虚拟地址空间的物理页范围的确定工作，下面需要对`KERNEL_SPACE`做启动工作。简单整理一下这里的数据结构，其对应的树形图如下。
+```
+KERNEL_SPACE -> MemorySet -> page_table: PageTable
+                                                  
+                          -> areas: Vec<MapArea>
+
+PageTable -> root_ppn: PhysPageNum
+          -> frames: Vec<FrameTracker> -> ppn: PhysPageNum
+
+MapArea -> vpn_range: VPNRange 
+        -> data_frames: BTreeMap<VirtPageNum, FrameTracker>
+        -> map_type: MapType
+        -> map_perm: MapPermission
+```
+`KERNEL_SPACE`是`Memory Set`利用内部可变指针实例化得到的一个全局变量。
+```rust
+ 31 lazy_static! {
+ 30     /// The kernel's initial memory mapping(kernel address space)
+ 29     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
+ 28         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
+ 27 }
+```
+对于`MemorySet::new_kernel`这一函数，涉及的内容似乎还挺多的。我们尝试逐步分析。
+- 初始化操作：
+```rust
+82      pub fn new_kernel() -> Self {
+            // 利用new_bare建立一个空的、动态分配的MemorySet集合
+  1         let mut memory_set = Self::new_bare();
+  2         // map trampoline
+  3         memory_set.map_trampoline();
+```
+在这一步中，利用函数`new_bare`建立一个空的集合。
+```rust
+  6     /// Create a new empty `MemorySet`.
+  5     pub fn new_bare() -> Self {
+  4         Self {
+  3             page_table: PageTable::new(),
+  2             areas: Vec::new(),
+  1         }
+49      }
+```
+之后，利用`map_trampoline`函数做一些初始化跳板(trampoline)工作，这个映射函数map非常重要，我们会把它开盒，其将会依照我们前面所说的内存机制把物理页和虚拟页的映射做好。
+```rust
+  8     /// Mention that trampoline is not collected by areas.
+  7     fn map_trampoline(&mut self) {
+  6         self.page_table.map(
+  5             VirtAddr::from(TRAMPOLINE).into(), // TRAMPOLINE的虚拟地址非常大，可以去查看。
+  4             PhysAddr::from(strampoline as usize).into(), // stramploline位置在.text.entry之后，作为一个物理地址上的跳板
+  3             PTEFlags::R | PTEFlags::X,
+  2         );
+  1     }
+// -----------------------------------------------------------------
+// for PageTable maps:
+    6     /// set the map between virtual page number and physical page number
+  5     #[allow(unused)]
+  4     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
+  3         let pte = self.find_pte_create(vpn).unwrap(); // 寻找或者给vpn创建相关的表项
+  2         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+  1         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+134     }
+// -----------------------------------------------------------------
+// for find_pte_create function.
+ 10     /// Find PageTableEntry by VirtPageNum, create a frame for a 4KB page table if not exist
+ 11     fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+ 12         let idxs = vpn.indexes();
+ 13         let mut ppn = self.root_ppn; // root ppn.
+ 14         let mut result: Option<&mut PageTableEntry> = None;
+            // Elegant method to take a trip in page table entries.
+ 15         for (i, idx) in idxs.iter().enumerate() {
+                // idx: idx[0] -> idx[1] -> idx[2], high to low address.
+ 16             let pte = &mut ppn.get_pte_array()[*idx];
+ 17             if i == 2 {
+ 18                 result = Some(pte);
+                    // 最后一个链路上应该存储的是真实的ppn，因此需要在这里break，在之后填入我们map函数中提供的ppn和flag信息。
+ 19                 break;
+ 20             }
+ 21             if !pte.is_valid() { // 看一看有没有valid项，没有的话就得新开一个。
+ 22                 let frame = frame_alloc().unwrap();
+                    // 新创立一个PageTableEntry. ppn是frame分配时陪同存在的。
+ 23                 *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
+ 24                 // frames存放当前分配了空间的页表有哪些
+                    self.frames.push(frame);
+ 25             }
+ 26             ppn = pte.ppn();
+ 27         }
+ 28         result
+ 29     }
+ // -----------------------------------------------------------------
+ // for vpn indexes, accumulate vpn using shift methods.
+   6 impl VirtPageNum {
+  5     /// Get the indexes of the page table entry
+        /// idx[2] is the least significant part.
+  4     pub fn indexes(&self) -> [usize; 3] {
+  3         let mut vpn = self.0;
+  2         let mut idx = [0usize; 3];
+  1         for i in (0..3).rev() { // reverse the range, so we start countering from 2.
+164             idx[i] = vpn & 511;
+  1             vpn >>= 9;
+  2         }
+  3         idx
+  4     }
+  5 }
+  // for physical page num.
+    4 impl PhysPageNum {
+  3     /// Get the reference of page table(array of ptes)
+  2     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
+  1         let pa: PhysAddr = (*self).into(); // line 152 in src/mm/address.rs.
+            /// 将pa.0视作一个指向含有512个PTE项的数组的指针，之后fetch之即可，不管到底有没有这个数组存在，把他当做指针这一步均可以正常地进行。说白了512这个字你想想页表有多少个项就能马上明白是怎么一回事。
+182         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
+  1     }
+    }
+  // for page table entry
+    3 #[derive(Copy, Clone)]
+  2 #[repr(C)]
+  1 /// page table entry structure
+25  pub struct PageTableEntry {
+  1     /// bits of page table entry
+  2     pub bits: usize,
+  3 }
+
+
+// -----------------------------------------------------------
+// Good case for find_pte_create: no need to create a new entry.
+// Bad case for find_pte_create
+// 首先，按照64位经典模型，既然每个页大小是4KB，页表有512个项，也就说明了每个项的大小是8 Byte，特别的在这边`bits`恰好是usize，即8字节。
+// RISC-V的页表项存两样东西，一样是ppn，一样是flags信息。
+ 12 impl PageTableEntry {
+ 11     /// Create a new page table entry
+ 10     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
+  9         PageTableEntry {
+  8             bits: ppn.0 << 10 | flags.bits as usize,
+  7         }
+  6     }
+ 25     /// Create an empty page table entry
+ 24     pub fn empty() -> Self {
+ 23         PageTableEntry { bits: 0 }
+ 22     }
+ 21     /// Get the physical page number from the page table entry
+ 20     pub fn ppn(&self) -> PhysPageNum {
+ 19         (self.bits >> 10 & ((1usize << 44) - 1)).into()
+ 18     }
+ 17     /// Get the flags from the page table entry
+ 16     pub fn flags(&self) -> PTEFlags {
+ 15         PTEFlags::from_bits(self.bits as u8).unwrap()
+ 14     }
+ 13     /// The page pointered by page table entry is valid?
+ 12     pub fn is_valid(&self) -> bool {
+ 11         (self.flags() & PTEFlags::V) != PTEFlags::empty()
+ 10     }
+ }
+ // for frame_alloc() function.
+ impl FrameAllocator for StackFrameAllocator {
+   1     fn alloc(&mut self) -> Option<PhysPageNum> {
+            // 如果在recycle中，即刚刚dealloc释放，那么直接pop出来就好了
+69          if let Some(ppn) = self.recycled.pop() {
+  1             Some(ppn.into())
+            // 没有空间了
+  2         } else if self.current == self.end {
+  3             None
+            // 还有空间，且不是刚刚释放
+  4         } else {
+  5             self.current += 1;
+  6             Some((self.current - 1).into())
+  7         }
+  8     }
+ }
+```
+- 原linker加载后的文件的符号，在映射开启前的地址分布：
+```rust
+  4         // map kernel sections
+  5         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
+  6         info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
+  7         info!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
+  8         info!(
+  9             ".bss [{:#x}, {:#x})",
+ 10             sbss_with_stack as usize, ebss as usize
+ 11         );
+ 12         info!("mapping .text section");
+ 13         memory_set.push(
+ 14             MapArea::new(
+ 15                 (stext as usize).into(),
+ 16                 (etext as usize).into(),
+ 17                 MapType::Identical,
+ 18                 MapPermission::R | MapPermission::X,
+ 19             ),
+ 20             None,
+ 21         );
+ 22         info!("mapping .rodata section");
+ 23         memory_set.push(
+ 24             MapArea::new(
+ 25                 (srodata as usize).into(),
+ 26                 (erodata as usize).into(),
+ 27                 MapType::Identical,
+ 28                 MapPermission::R,
+ 29             ),
+ 30             None,
+ 31         );
+ 32         info!("mapping .data section");
+ 33         memory_set.push(
+ 34             MapArea::new(
+ 35                 (sdata as usize).into(),
+ 36                 (edata as usize).into(),
+  46                MapType::Identical,
+ 45                 MapPermission::R | MapPermission::W,
+ 44             ),
+ 43             None,
+ 42         );
+ 41         info!("mapping .bss section");
+ 40         memory_set.push(
+ 39             MapArea::new(
+ 38                 (sbss_with_stack as usize).into(),
+ 37                 (ebss as usize).into(),
+ 36                 MapType::Identical,
+ 35                 MapPermission::R | MapPermission::W,
+ 34             ),
+ 33             None,
+ 32         );
+ 31         info!("mapping physical memory");
+ 30         memory_set.push(
+ 29             MapArea::new(
+ 28                 (ekernel as usize).into(),
+ 27                 MEMORY_END.into(),
+ 26                 MapType::Identical,
+ 25                 MapPermission::R | MapPermission::W,
+ 24             ),
+ 23             None,
+ 22         );
+ 21         memory_set
+ 20     }
+ ```
+
+------------------------------------------
+
+------------------------------------------
