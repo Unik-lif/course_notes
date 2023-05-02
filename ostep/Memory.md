@@ -207,3 +207,162 @@ in the MMU, we can therefore maintain a table.
 
 When the code access out-of-bound memory, it will cause segmentation fault. **AND THE TERM PERSISTS.**
 
+### Which Segment are we referring to?
+1. Common approach: chop up the address space into segments based on the top few bits of the virtual address. **Used in VAX/VMS system.**
+
+Use top bits for example, as the segment selection part. Below is the mapping of VA2PA.
+```C
+/*
+* 13   11              0 *
+* ---------------------- *
+* |   |                | *
+* ---------------------- *
+* seg     offset.        *
+*/
+// get top 2 bits of 14-bit VA
+Segment = (VirtualAddress & SEG_MASK) >> SEG_SHIFT
+// now get offset
+Offset = VirtualAddress & OFFSET_MASK
+if (Offset >= Bounds[Segment])
+     RaiseException(PROTECTION_FAULT)
+else
+     PhysAddr = Base[Segment] + Offset
+     Register = AccessMemory(PhysAddr)
+```
+### Growing directions.
+Hardware also needs to know which way the segment grows, one bit should be provided to tag them as Postive grow or Negative grow.
+### Support for Sharing.
+code sharing is common and still in use in systems today.
+
+Protection bits should also be set, to inform the kernel whether a segment is readable/writable/executable or not.
+### Fine-grained vs Coarse-grained Segmentation.
+The e.g. we mentioned above is Coarse-grained Segmentation, but in fact early machine like **Multics** are more flexible and allowed for address spaces to consist of a large number of smaller segments, which is referred ato as fine-grained segmentation.
+
+Such a Fine-grained segmentation requries further hardware support, with a segment table of some kind stored in memory.
+
+Fine-grained Segmentation will utilize main memory more effectively.
+### OS support
+1. Segment registers must be saved and restored.
+2. Segment grow or shrink.
+3. Manage free space in physical memory.
+
+### Bad parts:
+Segmentation still causes great fraction (inner and external), so instead of finding an algorithm to utilize these fractions more effectively, a better way might be systematically change our segment mechanism into a more advanced one.
+
+## Free-Space Management
+For 'free' function, the library must be able to figure out how big a chunk of memory is when handed just a pointer to it. A basic idea might be store metadata in the heap, therefore we will be able to release the exact amout of space.
+
+See following code:
+```C
+// chunks in use.
+typedef struct {
+     int size;
+     int magic; // magic number like ELF header magic number to check the intergrity.
+} header_t;
+
+// free space, we use node to link them together.
+typedef struct __node_t {
+     int size;
+     struct __node_t * next;
+} node_t;
+```
+### Basic Strategies to allocate space.
+1. Best fit.
+2. Worst fit.
+3. First fit. -> possibility to pollutes the beginning of the free list with small objects exists.
+4. Next fit. -> avoid pollution.
+### Other approaches:
+
+#### segregated lists: 
+if a particular application has one (or a few) popular-sized request that it makes, keep a separate list just to manage objects of that size.
+
+For area of the right size, this will definitely benefit a lot.
+
+**Slab allocator:**dynamically switch between segregated lists and general allocator.
+#### Buddy allocation:
+√.
+#### Other ideas:
+scaling, trees, glibc allocator. -> See Papers.
+
+## Paging: Introduction
+Segmentation: chops things up into variable-sized pieces. This solution has inherent diffculties -> different-size chunks, leading to fragmentated pieces.
+
+chop up space into fixed-sized pieces might be a better idea. -> Paging.
+
+**Advantages:**
+
+1. flexibility: a fully-developed paging approach, the system will be able to support the abstraction of an address effectively. (No Need to make assumptions about the heap & stack growing directions)
+2. simplicity management.
+
+record mappings: -> **page table**
+
+most page table structures we discuss are per-process structures.
+### Baseline Idea:
+Basic virtual address form and translation:
+```
+PPN: or PFN, physical page number or physical frame number.
+VPN: virtual page number.
+
+          ------------------
+          | VPN  |  Offset |
+          ------------------
+             |        |
+             |        |
+-----------------     |
+|    address    |     |
+|   translation |     |
+-----------------     |
+        |             |
+---------------------------
+|     PPN       |  Offset |
+---------------------------
+```
+### Page Table Store machnism.
+PTE: page table entry.
+
+we use PTE to hold the physical translation plus any other userful stuff.
+
+For every process we should maintain a set of translation mapping reference table, apparently it will cost a lot if our data structures are not well designed.
+
+Page table is just a data structure that is used to map virtual address to physical addresses, to be more exact, map VPN to PPN.
+
+The OS indexes the linaer page table, which is an array, by the virtual page number, and looks up the page-table entry(PTE) at that index in order to find the desired physical frame number.
+
+An x86 page table entry looks like this:
+```
+31                   12 11 9 8  7  6 5  4   3   2   1  0
+---------------------------------------------------------
+|          PFN         |\\\\|G|PAT|D|A|PCD|PWT|U/S|R/W|P|
+---------------------------------------------------------
+```
+It might be strange we got no Valid bit here in intel x86 PTE, but in fact is common in hardware design: we often just provide the minimal set of features upon which the OS can build a full service.
+
+If the hardware are designed with too many features, it will also limit the OS developers.
+### Paging: Still too slow.
+If we still use a linear array to store our PTEs, the fetching is still very costly.
+
+1. Two times to access memory.
+2. Too large PageTable. 
+```C
+// Extract the VPN from the virtual address
+VPN = (VirtualAddres & VPN_MASK) >> SHIFT
+
+// Form the address of the page-table entry (PTE)
+PTEAddr = PageTableBaseRegister + (VPN * sizeof(PTE))
+
+// Fetch the PTE
+PTE = AccessMemory(PTEAddr)
+
+// Check if process can access the page
+if (PTE.Valid == False)
+     RaiseException(SEGMENTATION_FAULT)
+else if (CanAccess(PTE.ProtectBits) == False)
+     RaiseException(PROTECTION_FAULT)
+else
+     // Access is OK: form physical address and fetch it
+     offset = VirtualAddress & OFFSET_MASK
+     PhysAddr = (PTE.PFN << SHIFT) | offset
+     Register = AccessMemory(PhysAddr)
+```
+### Memory Access counting:
+When we fetch the instructions, we also need access the memory.
