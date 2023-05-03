@@ -366,3 +366,112 @@ else
 ```
 ### Memory Access counting:
 When we fetch the instructions, we also need access the memory.
+
+## Paging: Faster Translation (TLBs)
+How can we speed up address translation, and generally avoid the extra memory reference that paging seems to require?
+
+Speed up -> always comes from Hardware.
+
+TLB is part of the chip's memory-management unit, and is simply a hardware cache of popular virtual to physical address translation. We can simply conclude it as address-translation cache.
+
+The algorithm is given below:
+```C
+// get the VPN of the VA.
+VPN = (VirtualAddress & VPN_MASK) >> SHIFT
+// Use VPN as index to lookup the TLB.
+(Success, TlbEntry) = TLB_Lookup(VPN)
+// If we can find VPN in TLB, it will cause a TLB Hit.
+if (Success == True)
+     // Check TlbEntry's ProtectBits.
+     if (CanAccess(TlbEntry.ProtectBits) == True)
+          Offset = VirtualAddress & OFFSET_MASK
+          // TlbEntry will have PFN for us to use.
+          // Now we can assemble it.
+          PhysAddr = (TlbEntry.PFN << SHIFT) | Offset
+          Register = AccessMemory(PhysAddr)
+     else
+          RaiseException(PROTECTION_FAULT)
+else
+     // fail to find TlbEntry.
+     // So we simply use the startegy in last chapter.
+     PTEAddr = PTBR + (VPN * sizeof(PTE))
+     PTE = AccessMemory(PTEAddr)
+     // In intel, Valid & Protect Bits are seen as the same one.
+     if (PTE.Valid == False)
+          RaiseException(SEGMENTATION_FAULT)
+     else if (CanAccess(PTE.ProtectBits) == False)
+          RaiseException(PROTECTION_FAULT)
+     else
+          // That's of course, think about the cache.
+          TLB_Insert(VPN, PTE.PFN, PTE.ProtectionBits)
+          RetryInstruction()
+```
+### Who Handles the TLB Miss?
+It depends, in CISC machine like x86 architecture, which uses a fixed multi-levl page table, the hardware didn't much trust those sneaky OS people. In these cases, it is hardware that handles the TLB Misses.
+
+More modern architectures like MIPS that use RISC ISAs will use trap handler to do this stuff. The TLB miss will be handled by the software.
+
+The return-from-trap instruction is different than the return-from-trap we saw before when servicing a system call. Two things should be handled carefully.
+
+1. After handling TLB miss, the hardware must resume execution at the instruction that caused the trap. This retry lets the instruction run again, and this time will result in a TLB hit. 
+
+So the hardware must save a different PC when trapping into the OS to properly resume.
+
+2. Besides, the OS must be careful not to cause an infinite chain of TLB missses to occur.
+### TLB contents:
+```
+-------------------------
+| VPN | PFN | other bits|
+-------------------------
+```
+other bits will store interesting flags for writable/readable/executable and etc..
+### TLB context switches issue
+TLB contains virtual-to-physical translations that are only valid for the currently running process, these translations are not meaninful for other processes.
+
+ways to solve this issue:
+1. flush the TLB on context switches, thus emptying it before running the next process.
+2. provide an address space identifier(ASID) field in the TLB to mitigate great cost in flushing.
+```
+-----------------------------------
+| VPN | PFN | valid | prot | ASID |
+-----------------------------------
+| 10  | 100 |   1   |  rwx |  1   |
+|  -  |  -  |   0   |   -  |  -   |
+| 10  | 170 |   1   |  rwx |  2   |
+|  -  |  -  |   0   |   -  |  -   |
+-----------------------------------
+```
+### cache replacement:
+when we are installing a new entry in the TLB, we have to replace an old one, and thus the question: which one to replace?
+
+One Key idea: minimize the Miss Rate.
+
+common approach: 
+- least-recently-used -> LRU entry. 
+- random policy.
+
+MIPS R4000 with software-managed TLBs: 32-bit address space with 4KB pages
+- that means 20-bit VPN and 12-bit offset in typical virtual address.
+```
+63                           45  44 43   40 39         32
+---------------------------------------------------------
+|          VPN                 | G |\\\\\\\|    ASID    |
+---------------------------------------------------------
+
+31 30 29                              6 5     3  2  1  0
+---------------------------------------------------------
+|\\\\|                 PFN             |   C   | D| V |\|
+---------------------------------------------------------
+
+VPN: 19 bit, user can only use half of the VPN.
+G: global shared bit.
+ASID: if G is set, this field will be ignored (of course)
+C: Coherence bits. Which determines how a page is cached by the hardware.
+D: dirty bit.
+V: valid bit.
+```
+OS can also use part of the TLBs(critical part), the OS uses these reserved mappings for code and data that it wants to access during critical times, where a TLB miss would be problematic(Of course!).
+### Sum.
+TLB bottleneck -> VIPT cache.
+
+See CSAPP.
