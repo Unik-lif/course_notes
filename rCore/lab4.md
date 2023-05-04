@@ -324,7 +324,7 @@ pub fn new_bare() -> Self {
 fn map_trampoline(&mut self) {
     self.page_table.map(
         VirtAddr::from(TRAMPOLINE).into(), // TRAMPOLINE的虚拟地址非常大，可以去查看。
-        PhysAddr::from(strampoline as usize).into(), // stramploline位置在.text.entry之后，作为一个物理地址上的跳板
+        PhysAddr::from(strampoline as usize).into(), // strampoline位置在.text.entry之后，作为一个物理地址上的跳板
         PTEFlags::R | PTEFlags::X,
     );
 }
@@ -456,13 +456,13 @@ impl FrameAllocator for StackFrameAllocator {
         );
         info!("mapping .text section");
  ```
-- 在`memory_set`中压入各个段落的地址，最终链接器知道的似乎已经是虚拟地址了，在`push`的时候同时完成虚拟地址与物理地址的映射。
+- 在`memory_set`中压入各个段落的地址，在这边的`stext`和`etext`既是虚拟地址也是物理地址，不过在函数参数中其表意是虚拟地址，因为我们开启了`Identical`选项，在`push`的时候同时完成虚拟地址与物理地址的映射。
  ```rust
         memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
                 (etext as usize).into(),
-                MapType::Identical,
+                MapType::Identical, // 直接映射之，维持一致
                 MapPermission::R | MapPermission::X,
             ),
             None,
@@ -502,7 +502,7 @@ impl FrameAllocator for StackFrameAllocator {
             MapArea::new(
                 (ekernel as usize).into(),
                 MEMORY_END.into(),
-                MapType::Identical,
+                MapType::Identical, // 看上去分配出去了，实际上并没有实质内容
                 MapPermission::R | MapPermission::W,
             ),
             None,
@@ -587,7 +587,19 @@ impl MapArea {
     }
 }
 ```
-
+在完成了`KERNEL_SPACE`，即内核地址空间的初始化后，需要运行函数`activate`启动之。
+```rust
+pub fn activate(&self) {
+    // 写入satp所需的token，即Sv39 | ppn信息
+    // 实际上satp的后44位可以写任何PPN信息，这边用来存root_ppn
+    let satp = self.page_table.token();
+    unsafe {
+        satp::write(satp);
+        // 写完后需要运行sfence.vma指令以让全部处理器知道（说白了很像刷新一次），具体信息可查阅privileged手册。
+        asm!("sfence.vma");
+    }
+}
+```
 #### 虚拟内存重映射测试：
 对应的函数为`mm::remap_test()`。
 
@@ -661,7 +673,14 @@ pub fn set_next_trigger() {
 ```rust
 task::run_first_task();
 ```
-同样使用内部可变的`TASK_MANGER`进行管理，如下所示：
+同样使用内部可变的`TASK_MANGER`进行管理，
+```rust
+/// Run the first task in task list.
+pub fn run_first_task() {
+    TASK_MANAGER.run_first_task();
+}
+```
+如下所示：
 ```rust
 lazy_static! {
     /// a `TaskManager` global instance through lazy_static!
@@ -673,8 +692,10 @@ lazy_static! {
         // 声明一个tasks块，存放各个任务的控制块
         let mut tasks: Vec<TaskControlBlock> = Vec::new();
         for i in 0..num_app {
+            // 初始化各个任务对应的TaskControlBlock
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
         }
+        // 返回之即可
         TaskManager {
             num_app,
             inner: unsafe {
@@ -701,12 +722,15 @@ pub struct TaskControlBlock {
     pub memory_set: MemorySet,
 
     /// The phys page number of trap context
+    /// 内陷上下文存放的物理页号
     pub trap_cx_ppn: PhysPageNum,
 
     /// The size(top addr) of program which is loaded from elf file
+    /// 程序基地址，这个应该是虚拟地址
     pub base_size: usize,
 
     /// Heap bottom
+    /// 程序的堆地址底部位置（堆向上增长），同样也是虚拟地址
     pub heap_bottom: usize,
 
     /// Program break
@@ -734,52 +758,608 @@ pub fn get_app_data(app_id: usize) -> &'static [u8] {
     }
 }
 ```
-上面这个函数似乎也没干什么，从`_num_app`处搞来的入口向量地址找到各个`APP`所在的地址，把他们对应的内容信息加载进来。这一步怎么做可能得看一下文档如何写好应用程序的链接器。
+上面这个函数似乎也没干什么，从`_num_app`处搞来的入口向量地址找到各个`APP`所在的地址，把他们对应的内容信息加载进来。
 
-按照题目的要求，在`Lab4`中不再只是加载代码段信息的`binary form`，而是整个`ELF`文件进行装载。这是一件不错的事情，不过也需要我们努力考察这个应用程序的链接器。
+按照题目的要求，在`Lab4`中不再只是加载代码段信息的`binary form`，而是整个`ELF`文件进行装载。这是一件不错的事情。我们可以看到`src/link_app.S`文件内的部分信息，发现相关的应用程序以`elf`的形式读入了，所在的位置确乎是在数据段内`app_i_start`所示的位置。
+```S
+ .align 3
+    .section .data
+    .global _num_app
+_num_app:
+    .quad 11
+    .quad app_0_start
+    .quad app_1_start
+    .quad app_2_start
+    .quad app_3_start
+    .quad app_4_start
+    .quad app_5_start
+    .quad app_6_start
+    .quad app_7_start
+    .quad app_8_start
+    .quad app_9_start
+    .quad app_10_start
+    .quad app_10_end
 
-从向量地址存储地读来应用程序的相关信息后，我们来看一下应该怎么处理它，这个函数名为`from_elf`。
+    .section .data
+    .global app_0_start
+    .global app_0_end
+    .align 3
+app_0_start:
+    .incbin "../user/build/elf/ch2b_bad_address.elf"
+app_0_end:
 
-
-如下所示：
+    .section .data
+    .global app_1_start
+    .global app_1_end
+    .align 3
+app_1_start:
+    .incbin "../user/build/elf/ch2b_bad_instructions.elf"
+app_1_end:
+```
+对于`TaskControlBlock`块的初始化是复杂的，我们尝试分开来解读，如下所示：
 ```rust
 pub fn new(elf_data: &[u8], app_id: usize) -> Self {
     // memory_set with elf program headers/trampoline/trap context/user stack
+    // 通过ELF文件读取相关的地址空间、应用程序栈、ELF文件代码入口
     let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+    // TCB中一个载荷，trap处理跳板的物理页位置
+    // 利用先前读取ELF文件所获得的memory_set，根据TRAP_CONTEXT_BASE寻找物理地址页
     let trap_cx_ppn = memory_set
         .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
         .unwrap()
         .ppn();
+    // 又一个载荷，任务当前运行的状态
     let task_status = TaskStatus::Ready;
     // map a kernel-stack in kernel space
+    // 此处的bottom与top仅反映了地址上的底部和顶部，与真实环境下栈的样子不一样。
     let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(app_id);
     KERNEL_SPACE.exclusive_access().insert_framed_area(
         kernel_stack_bottom.into(),
         kernel_stack_top.into(),
         MapPermission::R | MapPermission::W,
     );
+    // 准备装载了
     let task_control_block = Self {
         task_status,
-        task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+        task_cx: TaskContext::goto_trap_return(kernel_stack_top), // 应用程序的内核栈位置是kernel_stack_top，goto_trap_return返回task上下文
         memory_set,
         trap_cx_ppn,
+        // 似乎这三个载荷在这边没有那么重要
         base_size: user_sp,
         heap_bottom: user_sp,
         program_brk: user_sp,
     };
     // prepare TrapContext in user space
-    let trap_cx = task_control_block.get_trap_cx();
+    let trap_cx = task_control_block.get_trap_cx(); // trap_cx是mutable TrapContext
     *trap_cx = TrapContext::app_init_context(
-        entry_point,
-        user_sp,
-        KERNEL_SPACE.exclusive_access().token(),
-        kernel_stack_top,
-        trap_handler as usize,
+        entry_point, // 进入地址
+        user_sp, // 用户栈
+        KERNEL_SPACE.exclusive_access().token(), // 这是pagetable存放的地方
+        kernel_stack_top, // 内核栈
+        trap_handler as usize, // trap_handler作为内陷处理函数的地址
     );
     task_control_block
 }
 ```
+##### ELF信息读取
+我们首先来看从`ELF`文件中能够得到什么信息。回忆在做x86实验时的一些细节，`ELF`文件中比较重要的是利用`program header`去寻找重要的信息，参考下面的链接：
+
+https://wiki.osdev.org/ELF
+
+装载`ELF`的大体流程：
+1. 检查`magic`数，验证是否合法
+2. 阅读`ELF Header`，一个可运行的装载器往往仅关心`program headers`
+3. 阅读`program headers`，他们可以帮助机器了解具体的程序段在文件的位置，以方便把代码段装载进来。
+4. 解析`program headers`，确定哪些程序段是一定要装载进来的，只有`PT_LOAD`的段才是需要被装载进来的段。
+5. 装载这些段，按照下面的步骤来做：首先，为每个代码段分配虚拟内存空间，从每个代码段的`p_vaddr`开始分配`p_memsz`大小的空间。其次，将段数据从`p_offset`位置开始的内容，复制到`p_vaddr`位置，这里复制的段大小是`p_filesz`。`p_memsz`和`p_filesz`的大小理应相同，如果不同则可以用`0`进行`padding`工作。
+6. 读取可执行程序的进入地址。
+7. 在装载好的内存空间中，跳转到进入地址并运行之。
+
+从向量地址存储地读来应用程序的相关信息后，我们来看一下应该怎么处理它，这个函数名为`from_elf`。
+```rust
+/// Include sections in elf and trampoline and TrapContext and user stack,
+/// also returns user_sp_base and entry point.
+pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
+    // 初始化空间
+    let mut memory_set = Self::new_bare();
+    // map trampoline，把跳板映射进来。strampoline是物理地址中对应的处理部分，对于用户的ELF，我们把虚拟地址中的trampoline映射到strampoline位置上。
+    memory_set.map_trampoline();
+    // map program headers of elf, with U flag
+    let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
+    let elf_header = elf.header;
+    let magic = elf_header.pt1.magic;
+    // 检查可执行文件是否合法 - step 1.
+    assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
+    // 看看一共有多少个代码段 - step 2.
+    let ph_count = elf_header.pt2.ph_count();
+    // 这只是一个初始化，意义并不是特别大
+    let mut max_end_vpn = VirtPageNum(0); 
+    // step 3.
+    for i in 0..ph_count {
+        // program header information.
+        let ph = elf.program_header(i).unwrap();
+        // 找那些可以装载的代码段 - step 4.
+        if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
+            // memsize always are larger than the filesize.
+            let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
+            let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+            // U flag. for U-mode.
+            let mut map_perm = MapPermission::U;
+            let ph_flags = ph.flags();
+            // Permission flag.
+            if ph_flags.is_read() {
+                map_perm |= MapPermission::R;
+            }
+            if ph_flags.is_write() {
+                map_perm |= MapPermission::W;
+            }
+            if ph_flags.is_execute() {
+                map_perm |= MapPermission::X;
+            }
+            // use framed, which means we will map it with multi-level page table.
+            // Time to assemble!!
+            // 内存映射，但是这一块区域其实是空的，什么东西也没有，需要把data写入
+            let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
+            max_end_vpn = map_area.vpn_range.get_end();
+            // copy_data -> see docs.
+            // 在使用Framed方式读入时，需要同时装载数据以供应用程序使用（不如说data没写进去，这玩意是空白的，没有意义）
+            // 或许得要有更多的x86编程经验才比较方便理解这一点（×），看一看ELF就好了哈哈
+            // 代码需要被读入
+            memory_set.push(
+                map_area,
+                Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
+            );
+        }
+    }
+    // map user stack with U flags
+    // 这里其实比较奇怪。
+    // https://docs.oracle.com/cd/E19683-01/816-1386/chapter6-83432/index.html
+    // 找到解答了捏
+    let max_end_va: VirtAddr = max_end_vpn.into();
+    let mut user_stack_bottom: usize = max_end_va.into();
+    // 现在在最高地址位置层了
+    // guard page
+    user_stack_bottom += PAGE_SIZE;
+    // guard page之上是用户的栈空间，大小为两个4 KB页面
+    let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
+    // 将用户栈利用Framed方式写入内存集合中
+    memory_set.push(
+        MapArea::new(
+            user_stack_bottom.into(),
+            user_stack_top.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W | MapPermission::U,
+        ),
+        None,
+    );
+    // used in sbrk，这个真的不清楚干什么用的。姑且就认为在用户栈之上还有个提供给sbrk系统调用的空间吧。
+    memory_set.push(
+        MapArea::new(
+            user_stack_top.into(),
+            user_stack_top.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W | MapPermission::U,
+        ),
+        None,
+    );
+    // map TrapContext，在次高位设置了一个用于存放Trap上下文信息的内存空间，并以Framed的方式进行管理。
+    memory_set.push(
+        MapArea::new(
+            TRAP_CONTEXT_BASE.into(),
+            TRAMPOLINE.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W,
+        ),
+        None,
+    );
+    (
+        memory_set,
+        user_stack_top,
+        elf.header.pt2.entry_point() as usize,
+    )
+}
+
+```
+
+
+该函数的最终目的是实现如下的应用程序内存排布：
+
+![](http://rcore-os.cn/rCore-Tutorial-Book-v3/_images/app-as-full.png)
+
+经过这一部分的解析，我们初始化了某个应用程序的内存集合`Memory_set`排布方式（如上面的图片所述），确定了其用于栈和处理`trap`的跳板位置，同时还返回了`ELF`文件中代码文件的入口位置。
+
+##### 内核栈空间寻找
+在内核中的内存空间排布如下图所示：前者是内核高地址的排布，后者是内核低地址的排布。
+
+![](http://rcore-os.cn/rCore-Tutorial-Book-v3/_images/kernel-as-high.png)
+
+![](http://rcore-os.cn/rCore-Tutorial-Book-v3/_images/kernel-as-low.png)
+
+我们分析函数：`kernel_stack_position`的相关情况
+```rust
+/// Return (bottom, top) of a kernel stack in kernel space.
+pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
+    let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
+    let bottom = top - KERNEL_STACK_SIZE;
+    (bottom, top)
+}
+```
+这个函数根据应用程序的`ID`返回了应用程序在内核空间上的内核栈位置，左底右顶（但并非栈底和栈顶），显然是从高地址`TRAMPOLINE`位置往下减，而`KERNEL_STACK_SIZE`也很恰好是两个页的大小。
+##### TrapContext内容
+`TrapContext`拥有丰富的含义，如下所示：
+```rust
+#[repr(C)]
+#[derive(Debug)]
+/// trap context structure containing sstatus, sepc and registers
+pub struct TrapContext {
+    /// General-Purpose Register x0-31
+    pub x: [usize; 32],
+    /// Supervisor Status Register
+    pub sstatus: Sstatus,
+    /// Supervisor Exception Program Counter
+    pub sepc: usize,
+    /// Token of kernel address space
+    pub kernel_satp: usize,
+    /// Kernel stack pointer of the current application
+    pub kernel_sp: usize,
+    /// Virtual address of trap handler entry point in kernel
+    /// cite a function in fact.
+    pub trap_handler: usize,
+}
+```
+其内部的两个函数如下所示，信息在注释中已经解释得很丰富，我们不再参考之：
+```rust
+impl TrapContext {
+    /// put the sp(stack pointer) into x\[2\] field of TrapContext
+    pub fn set_sp(&mut self, sp: usize) {
+        self.x[2] = sp;
+    }
+    /// init the trap context of an application
+    pub fn app_init_context(
+        entry: usize,
+        sp: usize,
+        kernel_satp: usize,
+        kernel_sp: usize,
+        trap_handler: usize,
+    ) -> Self {
+        let mut sstatus = sstatus::read();
+        // set CPU privilege to User after trapping back
+        sstatus.set_spp(SPP::User);
+        let mut cx = Self {
+            x: [0; 32],
+            sstatus,
+            sepc: entry,  // entry point of app
+            kernel_satp,  // addr of page table
+            kernel_sp,    // kernel stack
+            trap_handler, // addr of trap_handler function
+        };
+        cx.set_sp(sp); // app's user stack pointer
+        cx // return initial Trap Context of app
+    }
+}
+```
+
+到这里，我们完成了`TCB`块初始化的解读，`TASK_MANAGER`的初始化也就自然迎刃而解了，接下来是要让程序能够跑起来了。
+##### 开始运行第一个任务
+经典采用`_unused`任务进行替罪羊的一个当。
+```rust
+fn run_first_task(&self) -> ! {
+    let mut inner = self.inner.exclusive_access();
+    // 攫取第一个任务
+    let next_task = &mut inner.tasks[0];
+    // 设置任务状态为Running
+    next_task.task_status = TaskStatus::Running;
+    let next_task_cx_ptr = &next_task.task_cx as *const TaskContext; // 注意先前初始化写入的一些数据
+    drop(inner);
+    let mut _unused = TaskContext::zero_init();
+    // before this, we should drop local variables that must be dropped manually
+    unsafe {
+        __switch(&mut _unused as *mut _, next_task_cx_ptr);
+    }
+    panic!("unreachable in run_first_task!");
+}
+```
+利用`__switch`在多个任务之间进行切换。
+```rust
+core::arch::global_asm!(include_str!("switch.S"));
+use super::TaskContext;
+
+extern "C" {
+    /// Switch to the context of `next_task_cx_ptr`, saving the current context
+    /// in `current_task_cx_ptr`.
+    pub fn __switch(current_task_cx_ptr: *mut TaskContext, next_task_cx_ptr: *const TaskContext);
+}
+```
+`__switch`函数如下所示，其拥有两个参数，其一为当前运行的任务的上下文指针，其二为接下来运行的任务的上下文指针。
+
+其实说起来也确实很简单，`a0`和`a1`分别反映二者任务存放上下文的指针地址，只要进行`load store`操作就完事了。
+```rust
+__switch:
+    # __switch(
+    #     current_task_cx_ptr: *mut TaskContext,
+    #     next_task_cx_ptr: *const TaskContext
+    # )
+    # save kernel stack of current task
+    sd sp, 8(a0)
+    # save ra & s0~s11 of current execution
+    sd ra, 0(a0)
+    .set n, 0
+    .rept 12
+        SAVE_SN %n
+        .set n, n + 1
+    .endr
+    # restore ra & s0~s11 of next execution
+    ld ra, 0(a1)
+    .set n, 0
+    .rept 12
+        LOAD_SN %n
+        .set n, n + 1
+    .endr
+    # restore kernel stack of next task
+    ld sp, 8(a1)
+    ret
+```
+最后的`ret`将会返回到`ra`所存储的位置，在先前的初始化中，我们上下文中写入的第一个参数，即`ra`恰好是`trap_return`函数（可以查看`goto_trap_return`函数）。
+```rust
+#[no_mangle]
+/// return to user space
+/// set the new addr of __restore asm function in TRAMPOLINE page,
+/// set the reg a0 = trap_cx_ptr, reg a1 = phy addr of usr page table,
+/// finally, jump to new addr of __restore asm function
+pub fn trap_return() -> ! {
+    // 确定入口
+    set_user_trap_entry();
+    let trap_cx_ptr = TRAP_CONTEXT_BASE;
+    // user page table physical address.
+    let user_satp = current_user_token();
+    extern "C" {
+        fn __alltraps();
+        fn __restore();
+    }
+    // restore_va函数的虚拟地址所在位置
+    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    // trace!("[kernel] trap_return: ..before return");
+    unsafe {
+        asm!(
+            "fence.i",
+            "jr {restore_va}",         // jump to new addr of __restore asm function
+            restore_va = in(reg) restore_va,
+            in("a0") trap_cx_ptr,      // a0 = virt addr of Trap Context
+            in("a1") user_satp,        // a1 = phy addr of usr page table
+            options(noreturn)
+        );
+    }
+}
+```
+函数`set_user_trap_entry`如下所示：
+```rust
+fn set_user_trap_entry() {
+    unsafe {
+        stvec::write(TRAMPOLINE as usize, TrapMode::Direct); // stvec: trap处理代码的位置在TRAMPOLINE
+    }
+}
+```
+上面的函数`trap_return`调用了`__restore`函数，并且用内陷上下文虚拟地址和用户空间的页表基地址作为参数输入。
+```rust
+__restore:
+    # a0: *TrapContext in user space(Constant); a1: user space token
+    # switch to user space
+    csrw satp, a1
+    sfence.vma # clear the tlb
+    csrw sscratch, a0
+    mv sp, a0
+    # now sp points to TrapContext in user space, start restoring based on it
+    # restore sstatus/sepc
+    ld t0, 32*8(sp)
+    ld t1, 33*8(sp)
+    csrw sstatus, t0 # sstatus
+    csrw sepc, t1 # entry_point of app
+    # restore general purpose registers except x0/sp/tp
+    ld x1, 1*8(sp)
+    ld x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    # back to user stack
+    ld sp, 2*8(sp)
+    sret
+```
+这个函数主要做了下面这些事情：
+1. 修改`satp`的`token`以实现从内核空间到用户空间的转换，清空`TLB`。
+2. 让`sp`指向用户空间中的`TrapContext`，并根据`TrapContext`装载上下文。
+3. 切换到先前写好的用户栈上，这个栈其实就是`user_sp`，这个信息是在`from_elf`的函数在用户空间开出来的一块区域。
+4. 返回到用户态上，入口地址为`sepc`，恰好就是`ELF`程序的入口。
+
+> 而当 CPU 完成 Trap 处理准备返回的时候，需要通过一条 S 特权级的特权指令 sret 来完成，这一条指令具体完成以下功能：
+> 
+> CPU 会将当前的特权级按照 sstatus 的 SPP 字段设置为 U 或者 S ；
+> 
+> CPU 会跳转到 sepc 寄存器指向的那条指令，然后继续执行。
+
+运行完第一个`ELF`程序后，照例会出现系统调用等等，这时候应该去看看内陷处理器怎么做了。
+
+还记的我们之前写的`TRAMPOLINE`吗？这玩意是怎么工作的？为什么我们能够做到指哪打哪？
+
+首先，这一部分代码是如何装载进来的？
+
+在`linker.ld`中看到`trampoline`代码被装载到了`strampoline`的物理内存位置。对应的我们又能找到这个段所在的位置。
+```rust
+strampoline = .;
+*(.text.trampoline);
+. = ALIGN(4K);
+*(.text .text.*)
+
+//trap.S
+.section .text.trampoline
+```
+之后，将`TRAMPOLINE`和物理地址`strampoline`映射在一起。
+```rust
+/// Mention that trampoline is not collected by areas.
+fn map_trampoline(&mut self) {
+    self.page_table.map(
+        VirtAddr::from(TRAMPOLINE).into(),
+        PhysAddr::from(strampoline as usize).into(),
+        PTEFlags::R | PTEFlags::X,
+    );
+}
+```
+所以之后只要把`TRAMPOLINE`写进`stvec`中就可以了。
+```rust
+  2 fn set_user_trap_entry() {
+  1     unsafe {
+45          stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
+  1     }
+  2 }
+```
+进入后，将会运行`__alltraps`汇编代码，然后再进入`trap_handler`之中。
+```S
+__alltraps:
+    csrrw sp, sscratch, sp
+    # now sp->*TrapContext in user space, sscratch->user stack
+    # save other general purpose registers
+    sd x1, 1*8(sp)
+    # skip sp(x2), we will save it later
+    sd x3, 3*8(sp)
+    # skip tp(x4), application does not use it
+    # save x5~x31
+    .set n, 5
+    .rept 27
+        SAVE_GP %n
+        .set n, n+1
+    .endr
+    # we can use t0/t1/t2 freely, because they have been saved in TrapContext
+    csrr t0, sstatus
+    csrr t1, sepc
+    sd t0, 32*8(sp)
+    sd t1, 33*8(sp)
+    # read user stack from sscratch and save it in TrapContext
+    csrr t2, sscratch
+    sd t2, 2*8(sp)
+    # load kernel_satp into t0
+    ld t0, 34*8(sp)
+    # load trap_handler into t1
+    ld t1, 36*8(sp)
+    # move to kernel_sp
+    ld sp, 35*8(sp)
+    # switch to kernel space
+    csrw satp, t0
+    sfence.vma
+    # jump to trap_handler
+    jr t1
+```
+这个名为`__alltraps`的函数主要做了下面的这些事情：
+1. 将内陷上下文存放到`sp`之中，而原本的`sp`，即用户栈将会存放到`sscratch`寄存器中
+2. 将当前的上下文信息存放到内陷上下文的位置，并对相关的特权级寄存器信息进行读取，以便进入内核态
+3. 清空`TLB`缓存，进入`trap_handler`
+```rust
+/// trap handler
+#[no_mangle]
+pub fn trap_handler() -> ! {
+    // 防止内核出现陷入，给它送一个处理函数
+    set_kernel_trap_entry();
+    // 利用TASK_MANAGER获取当前的内陷上下文对应的PPN
+    let cx = current_trap_cx();
+    let scause = scause::read(); // get trap cause
+    let stval = stval::read(); // get extra value
+    // trace!("into {:?}", scause.cause());
+    match scause.cause() {
+        Trap::Exception(Exception::UserEnvCall) => {
+            // jump to next instruction anyway
+            cx.sepc += 4;
+            // get system call return value
+            cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+        }
+        Trap::Exception(Exception::StoreFault)
+        | Trap::Exception(Exception::StorePageFault)
+        | Trap::Exception(Exception::LoadFault)
+        | Trap::Exception(Exception::LoadPageFault) => {
+            println!("[kernel] PageFault in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.", stval, cx.sepc);
+            exit_current_and_run_next();
+        }
+        Trap::Exception(Exception::IllegalInstruction) => {
+            println!("[kernel] IllegalInstruction in application, kernel killed it.");
+            exit_current_and_run_next();
+        }
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            set_next_trigger();
+            suspend_current_and_run_next();
+        }
+        _ => {
+            panic!(
+                "Unsupported trap {:?}, stval = {:#x}!",
+                scause.cause(),
+                stval
+            );
+        }
+    }
+    //println!("before trap_return");
+    trap_return();
+}
+```
+简单阐述步骤如下：
+1. 利用函数`set_kernel_trap_entry`防止内核态中断的情况。在处理`trap`的时候，我们此时的CPU处于内核态，要警惕内核出现异常，如果有，采用`trap_from_kernel`函数来`handle`它。
+```rust
+fn set_kernel_trap_entry() {
+    unsafe {
+        stvec::write(trap_from_kernel as usize, TrapMode::Direct);
+    }
+}
+```
+2. 从寄存器中获取内陷的原因，利用`TASK_MANAGER`找到各个应用程序的`Trap_cx`，这玩意就虚拟地址上是存放在次高页的，先前已经从`Memory_set`搞来了它的`PPN`了
+3. 根据不同的原因分发处理即可
+
+根据不同系统调用进行处理的流程参考`lab3.md`，考虑到篇幅，我们的代码跟踪活动就不再赘述了（其实真的没有太大必要，不是非常相像，是完全一致，不同的地方仅仅是`trap`过程和恢复等等），接下来请参考文档。
 
 ------------------------------------------
+### 文档阅读补充：
+1. FrameTracker：RAII机制的体现，用于给物理地址做封装，以实现生命周期的管理。封装后可以利用trait特性让物理地址页自动被drop以实现回收。这样就不需要程序员手动将堆上分配的资源回收了。
+2. 考虑到页表的数据结构处理方式：
+```rust
+pub struct PageTable {
+    root_ppn: PhysPageNum,
+    frames: Vec<FrameTracker>,
+}
 
-------------------------------------------
+impl PageTable {
+    pub fn new() -> Self {
+        let frame = frame_alloc().unwrap();
+        PageTable {
+            root_ppn: frame.ppn,
+            frames: vec![frame],
+        }
+    }
+}
+```
+FrameTracker的生命周期进一步被绑定在PageTable之上，在PageTable被释放的时候，FrameTracker及其内部存放的物理地址页同样会被自动释放掉。
+3. 逻辑段MapArea用于表示连续地址的虚拟内存，所谓逻辑段，就是指地址区间中的一段实际可用（即 MMU 通过查多级页表可以正确完成地址转换）的地址连续的虚拟地址区间，该区间内包含的所有虚拟页面都以一种相同的方式映射到物理页帧，具有可读/可写/可执行等属性。
+
+### 流程梳理：
+1. 创建内核地址空间，即我们上面的`mm::init()`，运行`page_table.token()`，将特殊信息写给`satp`，以开启分页（开启前需要清空TLB内的键值对，使用`sfence.vma`作为内存屏障）。
+
+特别的，这里提到了一个细节值得注意：
+> 幸运的是，我们做到了这一点。这条写入 satp 的指令及其下一条指令都在内核内存布局的代码段中，在切换之后是一个恒等映射，而在切换之前是视为物理地址直接取指，也可以将其看成一个恒等映射。这完全符合我们的期待：即使切换了地址空间，指令仍应该能够被连续的执行。
+
+2. 利用`remap_test`来检查内核地址空间的多级页表是否被正确地设置了。
+3. 在分页机制被使能之后，实现跳板机制变得复杂起来，需要让应用和内核地址空间在切换地址空间指令附近是平滑的，需要在切换的过程中同时完成地址空间的切换，即对`satp`寄存器完成修改。`rCore`采用了`xv6`里的隔离方法，让内核与应用程序的地址空间是相互隔离的。
+
+切换过程需要两个信息，一是内核地址空间的`token`，二是应用的内核栈栈顶的位置。我们仅有一个sscratch寄存器可以拿来用，因此不得不将`Trap`上下文保存在应用地址空间的一个虚拟页面中，而不是切换到内核地址空间去保存在内核栈上。
+
+说白了这个`token`能反映`root_ppn`的位置呗，没什么好评价的，在切换进程时估计用到挺多的。
+```rust
+/// get the token from the page table
+pub fn token(&self) -> usize {
+    8usize << 60 | self.root_ppn.0 // 这边开启的确乎是Sv39.
+}
+```
+4. 跳板机制的源码：请参考文档，写的不错，我感觉我没什么好评价的，细节多到爆炸，我就不应该直接碰源码。
+
+> 问题的本质可以概括为：跳转指令实际被执行时的虚拟地址和在编译器/汇编器/链接器进行后端代码生成和链接形成最终机器码时设置此指令的地址是不同的。
+
+这句话很酷哦。
+
+### 本次源码阅读到此结束
+**难点：**
+1. 内核的虚拟地址排布与相关复杂的数据结构
+2. `elf`的解读
