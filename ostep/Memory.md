@@ -475,3 +475,135 @@ OS can also use part of the TLBs(critical part), the OS uses these reserved mapp
 TLB bottleneck -> VIPT cache.
 
 See CSAPP.
+
+## Paging: Smaller Tables
+We've fixed problem of slow speed of page table, but page table is still to big and thus consume too much memory.
+
+A simple solution might be using bigger pages, therefore we not only can have better locality, but also get smaller page table.
+
+If pages are of 16 KB size, we should have 18-bit VPN plus a 14-bit offset. If the PTE is 4 bytes, for each page table, then the total size will be 1 MB. Whereas the 4 KB page will have the total page table size of $2 ^ 20 * 4 = 4 MB$. That's a big deal.
+
+In fact many architectures now support multiple page sizes, but this might do harm to the compatibility.
+### Hybrid Approach: paging and segments.
+`Multics` using segments to reduce the cost of paging strategy.
+
+Since many pfns are in fact unmapped, instead of having a single page table for the entire address space of the process, why not have one per logical segment? So we might thus have three page tables, one for the code, heap, and stack parts of the address space.
+
+So the virtual address may be treated as the following structure:
+```
+31  30 29                               12 11            0
+----------------------------------------------------------
+| seg |                VPN               |      Offset   |
+----------------------------------------------------------
+seg: 01 for code, 10 for the heap, 11 for the stack.
+
+SN = (VA & SEG_MASK) >> SN_SHIFT
+VPN = (VA & VPN_MASK) >> VPN_SHIFT
+AddressOfPTE = Base[SN] + (VPN * sizeof(PTE))
+```
+However, using hybrid method here might not always be a good idea, for segments to some extent assume a certain usage pattern of the address space.
+### A better way: multi-level page tables
+Basic idea:
+1. chop up the page table into page-sized units.
+2. if PTE is not valid, don't allocate that page of the page table at all. -> We use page directory to track this.
+3. use `page directory` to track whether a page of the page table is valid.
+
+The following is a good example.
+```
+Multi-level page table
+                    pd       pt      offset
+Virtual address: ----------------------------
+                 |  2bit |  2bit |    4bit  |
+                 ----------------------------
+      ----------------
+PDBR: |      200     | -----
+      ----------------     |
+                           |
+ valid   PFN               |
+------------------- <------|                          valid prot   PFN
+| 1|     201      | ------------------------------> --------------------
+-------------------                                 | 1|     rx |  12  |
+| 0|              |                                 --------------------
+-------------------                                 | 0|    rx  |  13  |
+| 0|              |                                 --------------------  PFN 201              
+-------------------                                 | 0|        |  -   |                                 
+| 1|    204       |------------------               --------------------                                 
+-------------------                 |               | 1|    rw  | 100  |                                 
+                                    |               --------------------                  
+                                    |
+                                    |
+                                    |------------> .......                             
+```
+每一级页表均可以用一个页来存储。
+
+Multi-level bad parts: 
+1. on a TLB miss, two loads from memory will be requried to get the right translation information from the page table. One for the page directory and one for the PTE itself. (Pages are stored in memory). But a linear one only cost one load.
+2. Complexity.
+
+If we want to access the PTE of a virtual address in multi-level page, the process might be like this:
+```
+     ------------------------------------------------------------
+VA:  | Page Directory Index | Page Table Index |     offset     |
+     ------------------------------------------------------------
+
+1. Get the PDE addr: this is in fact a PTE.
+PDIndex = high bits of VPN in virtual address.
+PDEAddr = PageDirBase + (PDIndex * sizeof(PDE))
+
+2. Access the PDE.
+PDE = Access(PDEAddr)
+
+3. Get the PPN of the next level.
+PDE.PPN
+
+4. Get PTEAddr. (PPN partial reflect a part of the address of PTEAddr, here it acts like the Base)
+PTEAddr = (PDE.PPN << SHIFT) + (PTIndex * sizeof(PTE))
+```
+
+![](http://rcore-os.cn/rCore-Tutorial-Book-v3/_images/sv39-full.png)
+
+### Inverted Page TABLES.
+Very similar to RMP in AMD SEV-SNP. 看来也都是站在巨人的肩膀上。
+
+## Beyond Physical Memory.
+Why do we want to support a single large address space for a process?
+
+> Once again, the answer is convenience and ease of use. With a large address space, you don't have to worry about if there is room enough in memory for your program's data structures.
+
+Swapping space allows the system to pretend that memory is larger than it actually is. Process can store some parts of its memory into the disk. To satisfy this demand, we must add even more machinery: When the hardware looks in the PTE, it may find that the page is `not present` in physical memory. The way the hardware determines this is through a new piece of information in each page-table entry, known as the `present bit`.
+
+If the PTE's present bit is 0, the page is not in memory but rather on disk somewhere. -> Page Fault Handler.
+### Page fault.
+This always is handled by OS for perfs and simplicity.
+
+Process:
+1. Get the PFN of the page for a disk address. -> find a free one.
+2. Faults come, looks in the PTE to find the address, and issues the request to disk to fetch the page into memory.
+3. Disk I/O completes.
+4. update page table to mark the page as present, update the PFN field of the page-table entry to record the in-memory location of the newly-fetched page.
+5. TLB miss & TLB updates.
+6. finish.
+
+What hardware does? TLB or Page access.
+
+What OS does? Handle exceptions.
+```C
+PFN = FindFreePhysicalPage()
+if (PFN == -1)
+     PFN = EvictPage()
+DiskRead(PTE.DiskAddr, PFN)
+PTE.present = True
+PTE.PFN = PFN
+RetryInstruction()
+```
+### Replacement Occurs:
+high watermark (HW) and low watermark (LW)
+
+When the OS notices that there are fewer than LW pages available, a background thread that is responsible for freeing memory runs, the thread evicts pages until there are HW pages available.
+
+This thread -> swap daemon or page daemon.
+
+Cluster or Group a number of pages. (reduces seek and rotational overheads of a disk, increase performance noticeably).
+
+When using `swap daemon`, the process will be changed a bit (use the thread to free the pages, and reawken the original thread beforehand).
+
