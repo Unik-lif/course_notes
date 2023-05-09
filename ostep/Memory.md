@@ -607,3 +607,49 @@ Cluster or Group a number of pages. (reduces seek and rotational overheads of a 
 
 When using `swap daemon`, the process will be changed a bit (use the thread to free the pages, and reawken the original thread beforehand).
 
+## Beyond Physical Memory: Policies
+Replacement Polices:
+### Optimal:
+replace the page that will be accessed furthest in the future, resulting in the fewest-possible cache misses. (but how to predict the future?)
+
+This can treat as the high line of our algorithm design, cause it is close enough to the ideal, so basically it still makes sense.
+
+我愿称之为纸袋模型，根据纸袋上的打点情况来做这件事情，很适合不怎么有灵活度的`ASIC`的模型。
+
+你也可以称之为为了这一碟醋，我们特地包了这些饺子。
+### FIFO:
+Belady's Algorithm: using FIFO, when we enlarge the cache size, the hit rate can get worse.
+### Random:
+How Random does depends entirely upon how lucky Random gets in its choices.
+### LRU: Use History
+LFU: least frequently used policy, replaces the least frequently used page when an eviction must take place.
+
+LRU: least recently used policy, replaces the least recently used page.
+
+
+在Workload的设计中采用了28定律来看结果，似乎是一个不错的idea。
+### LRU disadvantages:
+To implement LRU, we will sacrifice a lot. For OS, we should maintain a linked list and store the least recently used page at the front of the linked list. Or we can use hardware, for hardware we should update a time field in memory, thus when a page is accessed, the time field would be set.
+
+So maybe use a way to approximate LRU might be better.
+### LRU approximating:
+There is one use bit per page of the system, the use bit is set by hardware to 1, and the hardware never clears the bit, though.
+
+OS will use clock algorithm to use a `clock hand` pointing to some particular page to begin with (pages are searched in a circular list). If the page has its use bit set to 1, then the clock hand will first clear the bit, then points to the next one, until it finds a page with its use bit cleared. 
+### Dirty pages:
+if a page is dirty, it must be written back to disk to evict it, which is expensive. But if a page is not modified (not dirty), we can easily reuse it for other purposes.
+
+Thus, some VM systems prefer to evict clean pages over dirty pages.
+### Other VM policies:
+page selection, demand paging, prefetching.
+
+Clustering and grouping of writes: effective because of the nature of disk drives.
+
+Thrashing: too much page demands at once, maybe it is better to do less work well than to try to do everything at once poorly.
+
+Some OSs: Use out-of-memory killer when memory is oversubscribed.
+
+## Complete Virtual Memory Systems.
+To realize a complete virtual memory system, many features should be added into consideration.
+
+Simply read the contents is enough.
