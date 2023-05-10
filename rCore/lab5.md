@@ -489,9 +489,212 @@ pub fn kstack_alloc() -> KernelStack {
 3. 进程生成机制
 4. 进程资源回收
 5. 字符输入机制
+#### sys_read实现
+```rust
+pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
+    trace!("kernel:pid[{}] sys_read", current_task().unwrap().pid.0);
+    match fd {
+        FD_STDIN => {
+            assert_eq!(len, 1, "Only support len = 1 in sys_read!");
+            let mut c: usize;
+            loop {
+                c = console_getchar();
+                if c == 0 {
+                    suspend_current_and_run_next();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            let ch = c as u8;
+            let mut buffers = translated_byte_buffer(current_user_token(), buf, len);
+            unsafe {
+                buffers[0].as_mut_ptr().write_volatile(ch);
+            }
+            1
+        }
+        _ => {
+            panic!("Unsupported fd in sys_read!");
+        }
+    }
+}
+```
+此处仅仅支持标准输入以及单一字节的读取，在读取字符为`0`时，调用函数`suspend_current_and_run_next`。
+```rust
+/// Suspend the current 'Running' task and run the next task in task list.
+pub fn suspend_current_and_run_next() {
+    // There must be an application running.
+    let task = take_current_task().unwrap();
 
-1我们自己已经分析过了，2的话注意一下`schedule`函数就差不多了。
+    // ---- access current TCB exclusively
+    let mut task_inner = task.inner_exclusive_access();
+    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    // Change status to Ready
+    task_inner.task_status = TaskStatus::Ready;
+    drop(task_inner);
+    // ---- release current PCB
 
-3的难点在于`fork`需要让子进程创建一个和父进程几乎完全相同的应用地址空间，`exec`需要在进程控制块层面做一些修改，以让进程能够加载一个新应用的ELF可执行文件中的代码和数据。
+    // push back to ready queue.
+    add_task(task);
+    // jump to scheduling cycle
+    schedule(task_cx_ptr);
+}
+```
+该函数获取当前的进程，将其上下文环境利用`schedule`进行调度，还放在任务调度队伍的末尾。特别的，在运行进程后，任务就已经`pop`出来了，这里是重新把它添加在末尾位置。
+#### sys_write实现
+在`Lab2`中已经有较为详细的解释，这里不再赘述。
+#### sys_exit实现
+这个函数利用`exit_current_and_run_next`调走。
+```rust
+/// task exits and submit an exit code
+pub fn sys_exit(exit_code: i32) -> ! {
+    trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
+    exit_current_and_run_next(exit_code);
+    panic!("Unreachable in sys_exit!");
+}
+```
+这个函数我们简单看一下：与suspend不同，已经结束啦，所以`schedule`一个`unused`以帮助进入`idle`状态即可，任务调度队伍不用再重新添加过去了。
+```rust
+/// Exit the current 'Running' task and run the next task in task list.
+pub fn exit_current_and_run_next(exit_code: i32) {
+    // take from Processor
+    let task = take_current_task().unwrap();
 
-4的难点
+    let pid = task.getpid();
+    // 0 进程，似乎退出是不可接受的事情
+    if pid == IDLE_PID {
+        println!(
+            "[kernel] Idle process exit with exit_code {} ...",
+            exit_code
+        );
+        panic!("All applications completed!");
+    }
+
+    // **** access current TCB exclusively
+    let mut inner = task.inner_exclusive_access();
+    // Change status to Zombie，以便让父进程能够顺利回收掉它
+    inner.task_status = TaskStatus::Zombie;
+    // Record exit code
+    inner.exit_code = exit_code;
+    // do not move to its parent but under initproc
+
+    // ++++++ access initproc TCB exclusively
+    // 由于我们杀掉了进程，要把孩子过继给爷爷，这边选择把子进程交给第一个进程管理，挂在它的名下
+    {
+        let mut initproc_inner = INITPROC.inner_exclusive_access();
+        for child in inner.children.iter() {
+            child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
+            initproc_inner.children.push(child.clone());
+        }
+    }
+    // ++++++ release parent PCB
+
+    inner.children.clear();
+    // deallocate user space，清除掉MapArea空间
+    inner.memory_set.recycle_data_pages();
+    drop(inner);
+    // **** release current PCB
+    // drop task manually to maintain rc correctly
+    drop(task);
+    // we do not have to save task context
+    let mut _unused = TaskContext::zero_init();
+    schedule(&mut _unused as *mut _);
+}
+```
+#### sys_yield实现
+不难，本质上就是`suspend`的包装。
+#### sys_getpid实现
+直接查看`PROCESSOR`当前正在跑的一个进程就好了。
+```rust
+pub fn sys_getpid() -> isize {
+    trace!("kernel: sys_getpid pid:{}", current_task().unwrap().pid.0);
+    current_task().unwrap().pid.0 as isize
+}
+```
+#### sys_fork实现
+该函数利用`fork`生成了一个新的进程，并同时绑定了一个新的`id`。
+```rust
+pub fn sys_fork() -> isize {
+    trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
+    let current_task = current_task().unwrap();
+    let new_task = current_task.fork();
+    let new_pid = new_task.pid.0;
+    // modify trap context of new_task, because it returns immediately after switching
+    let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+    // we do not have to move to next instruction since we have done it before
+    // for child process, fork returns 0
+    // x10是返回值寄存器，即a0
+    trap_cx.x[10] = 0;
+    // add new task to scheduler
+    add_task(new_task);
+    new_pid as isize
+}
+```
+仔细查看`fork`函数，该函数需要在父亲进程的基础上给子进程分配一块相同的地址空间，当然这里显然指的是虚拟地址空间，具体怎么实现`mapping`得让操作系统来帮忙。
+```rust
+/// parent process fork the child process
+pub fn fork(self: &Arc<Self>) -> Arc<Self> {
+    // ---- access parent PCB exclusively
+    let mut parent_inner = self.inner_exclusive_access();
+    // copy user space(include trap context)
+    let memory_set = MemorySet::from_existed_user(&parent_inner.memory_set);
+    let trap_cx_ppn = memory_set
+        .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+        .unwrap()
+        .ppn();
+    // alloc a pid and a kernel stack in kernel space
+    let pid_handle = pid_alloc();
+    let kernel_stack = kstack_alloc();
+    let kernel_stack_top = kernel_stack.get_top();
+    let task_control_block = Arc::new(TaskControlBlock {
+        pid: pid_handle,
+        kernel_stack,
+        inner: unsafe {
+            UPSafeCell::new(TaskControlBlockInner {
+                trap_cx_ppn,
+                base_size: parent_inner.base_size,
+                task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                task_status: TaskStatus::Ready,
+                memory_set,
+                parent: Some(Arc::downgrade(self)),
+                children: Vec::new(),
+                exit_code: 0,
+                heap_bottom: parent_inner.heap_bottom,
+                program_brk: parent_inner.program_brk,
+            })
+        },
+    });
+    // add child
+    parent_inner.children.push(task_control_block.clone());
+    // modify kernel_sp in trap_cx
+    // **** access child PCB exclusively
+    let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+    trap_cx.kernel_sp = kernel_stack_top;
+    // return
+    task_control_block
+    // **** release child PCB
+    // ---- release parent PCB
+}
+
+/// ------------------------------------------------------------------------------------
+/// Create a new address space by copy code&data from a exited process's address space.
+pub fn from_existed_user(user_space: &Self) -> Self {
+    let mut memory_set = Self::new_bare();
+    // map trampoline
+    memory_set.map_trampoline();
+    // copy data sections/trap_context/user_stack
+    for area in user_space.areas.iter() {
+        let new_area = MapArea::from_another(area);
+        memory_set.push(new_area, None);
+        // copy data from another space
+        for vpn in area.vpn_range {
+            let src_ppn = user_space.translate(vpn).unwrap().ppn();
+            let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+            dst_ppn
+                .get_bytes_array()
+                .copy_from_slice(src_ppn.get_bytes_array());
+        }
+    }
+    memory_set
+}
+```
