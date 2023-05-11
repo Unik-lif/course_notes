@@ -637,7 +637,9 @@ pub fn fork(self: &Arc<Self>) -> Arc<Self> {
     // ---- access parent PCB exclusively
     let mut parent_inner = self.inner_exclusive_access();
     // copy user space(include trap context)
+    // 在地址空间中进行了一次复制
     let memory_set = MemorySet::from_existed_user(&parent_inner.memory_set);
+    // 这个是次高页
     let trap_cx_ppn = memory_set
         .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
         .unwrap()
@@ -646,6 +648,7 @@ pub fn fork(self: &Arc<Self>) -> Arc<Self> {
     let pid_handle = pid_alloc();
     let kernel_stack = kstack_alloc();
     let kernel_stack_top = kernel_stack.get_top();
+    // 进程控制块的声明
     let task_control_block = Arc::new(TaskControlBlock {
         pid: pid_handle,
         kernel_stack,
@@ -680,13 +683,17 @@ pub fn fork(self: &Arc<Self>) -> Arc<Self> {
 /// Create a new address space by copy code&data from a exited process's address space.
 pub fn from_existed_user(user_space: &Self) -> Self {
     let mut memory_set = Self::new_bare();
-    // map trampoline
+    // map trampoline，这一部分是内存空间中单独进行映射的
+    // trampoline在地址空间上的位置对于内核和用户的MapArea来说均是透明的，只有MemorySet可以看到它
+    // 因此此处需要单独进行映射
     memory_set.map_trampoline();
     // copy data sections/trap_context/user_stack
     for area in user_space.areas.iter() {
+        // 从另一个地址空间中逐个映射我们的MapArea
         let new_area = MapArea::from_another(area);
         memory_set.push(new_area, None);
         // copy data from another space
+        // 地址空间要相同，此外对应的地址空间内写好的信息也得是一样的，所以这边需要进行一个复制粘贴
         for vpn in area.vpn_range {
             let src_ppn = user_space.translate(vpn).unwrap().ppn();
             let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
@@ -696,5 +703,131 @@ pub fn from_existed_user(user_space: &Self) -> Self {
         }
     }
     memory_set
+}
+
+// -----------------------------------------------------------------------------------
+// paste a memory area from another task.
+pub fn from_another(another: &Self) -> Self {
+    Self {
+        vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
+        data_frames: BTreeMap::new(),
+        map_type: another.map_type,
+        map_perm: another.map_perm,
+    }
+}
+```
+#### sys_exec实现
+这个系统调用主要还是依赖函数`exec`。
+```rust
+pub fn sys_exec(path: *const u8) -> isize {
+    trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    // 获得了app的data，这其实是一个很大的东西，需要用from_elf进行解析
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let task = current_task().unwrap();
+        task.exec(data);
+        0
+    } else {
+        -1
+    }
+}
+
+/// ---------------------------------------------------------------------------
+/// Translate&Copy a ptr[u8] array end with `\0` to a `String` Vec through page table
+pub fn translated_str(token: usize, ptr: *const u8) -> String {
+    let page_table = PageTable::from_token(token);
+    let mut string = String::new();
+    let mut va = ptr as usize;
+    loop {
+        // 根据ptr所示位置的虚拟地址，利用当前的页表去找物理地址，并把对应位置的字符一个一个地读出来
+        // 直到读到0结束
+        let ch: u8 = *(page_table
+            .translate_va(VirtAddr::from(va))
+            .unwrap()
+            .get_mut());
+        if ch == 0 {
+            break;
+        } else {
+            string.push(ch as char);
+            va += 1;
+        }
+    }
+    string
+}
+
+// ----------------------------------------------------------------------------
+/// Load a new elf to replace the original application address space and start execution
+/// 这里似乎没什么好说的，是之前正常装载一个ELF文件的一个简化版本
+pub fn exec(&self, elf_data: &[u8]) {
+    // memory_set with elf program headers/trampoline/trap context/user stack
+    let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+    let trap_cx_ppn = memory_set
+        .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+        .unwrap()
+        .ppn();
+
+    // **** access current TCB exclusively
+    let mut inner = self.inner_exclusive_access();
+    // substitute memory_set
+    inner.memory_set = memory_set;
+    // update trap_cx ppn
+    inner.trap_cx_ppn = trap_cx_ppn;
+    // initialize base_size
+    inner.base_size = user_sp;
+    // initialize trap_cx
+    let trap_cx = inner.get_trap_cx();
+    *trap_cx = TrapContext::app_init_context(
+        entry_point,
+        user_sp,
+        KERNEL_SPACE.exclusive_access().token(),
+        self.kernel_stack.get_top(),
+        trap_handler as usize,
+    );
+    // **** release inner automatically
+}
+```
+#### sys_waitpid实现
+这个函数的实现如下图所示：
+```rust
+/// If there is not a child process whose pid is same as given, return -1.
+/// Else if there is a child process but it is still running, return -2.
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
+    trace!("kernel::pid[{}] sys_waitpid [{}]", current_task().unwrap().pid.0, pid);
+    let task = current_task().unwrap();
+    // find a child process
+
+    // ---- access current PCB exclusively
+    let mut inner = task.inner_exclusive_access();
+    // 发现没有合法的儿子
+    if !inner
+        .children
+        .iter()
+        .any(|p| pid == -1 || pid as usize == p.getpid())
+    {
+        return -1;
+        // ---- release current PCB
+    }
+    let pair = inner.children.iter().enumerate().find(|(_, p)| {
+        // ++++ temporarily access child PCB exclusively
+        // 特地找到pid与制定相等并且尚未被收尸的子进程，但当pid=-1时其实应该会有比较多的子进程？
+        p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
+        // ++++ release child PCB
+    });
+    if let Some((idx, _)) = pair {
+        let child = inner.children.remove(idx);
+        // confirm that child will be deallocated after being removed from children list
+        assert_eq!(Arc::strong_count(&child), 1);
+        let found_pid = child.getpid();
+        // ++++ temporarily access child PCB exclusively
+        let exit_code = child.inner_exclusive_access().exit_code;
+        // ++++ release child PCB
+        // 把exit_code写给父进程的某位置，需要索引物理地址
+        *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+        found_pid as isize
+    } else {
+        -2
+    }
+    // ---- release current PCB automatically
 }
 ```
