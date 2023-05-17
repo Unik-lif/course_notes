@@ -831,3 +831,11 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     // ---- release current PCB automatically
 }
 ```
+### 解题记录
+`Lab 3`个人感觉比较复杂的地方在于对于先前代码的移植，花了我更多的时间。
+
+对于`Stride`调度算法来说，这里的设计其实非常巧妙。题目设置了`priority >= 2`可以有效让我们判断两个`Stride`的真实大小，从而让溢出的检测成为可能。
+
+就说这么多吧，很有意思的一次尝试！
+
+还有一些有意思的地方：`vfork + exec`如何做？直接看`new`就好了。此外之前忘记去看`get_time`到底有没有移植好（说来感觉好蠢啊），浪费了我很多的时间。
