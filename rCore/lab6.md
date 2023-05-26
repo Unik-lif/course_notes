@@ -1003,3 +1003,118 @@ pub struct Inode {
         // release efs lock automatically by compiler
     }
 ```
+### 文件清空：
+```rust
+    /// Clear the data in current inode
+    pub fn clear(&self) {
+        let mut fs = self.fs.lock();
+        // modify_disk_inode：
+        // 通过clear_size来把接下来需要清空的那些inode号全部获取到data_blocks_dealloc
+        self.modify_disk_inode(|disk_inode| {
+            let size = disk_inode.size;
+            let data_blocks_dealloc = disk_inode.clear_size(&self.block_device);
+            assert!(data_blocks_dealloc.len() == DiskInode::total_blocks(size) as usize);
+            // data_blocks_dealloc遍历，利用dealloc_data对其中的文件内容进行清空
+            for data_block in data_blocks_dealloc.into_iter() {
+                fs.dealloc_data(data_block);
+            }
+        });
+        // 做好同步，把cache内的信息重新写到内存之中
+        block_cache_sync_all();
+    }
+```
+### 文件读写
+文件的读写主要还是调用了`read_at`与`write_at`这样的接口，多做了一层封装。
+```rust
+    /// Read data from current inode
+    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
+        let _fs = self.fs.lock();
+        self.read_disk_inode(|disk_inode| disk_inode.read_at(offset, buf, &self.block_device))
+    }
+    /// Write data to current inode
+    pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
+        let mut fs = self.fs.lock();
+        let size = self.modify_disk_inode(|disk_inode| {
+            self.increase_size((offset + buf.len()) as u32, disk_inode, &mut fs);
+            disk_inode.write_at(offset, buf, &self.block_device)
+        });
+        block_cache_sync_all();
+        size
+    }
+```
+至此，文件系统的解读完毕。
+## 其他的一些细节点：
+## 练习：
+### 基本的移植：
+在移植的时候遇到了很大的问题，前前后后应该有一天的时间放在这里了。具体来说是因为代码冗余造成的堆溢出问题，从而导致spawn异常，出现内存不够用的情况。
+### 准备入手了
+个人对于文件系统的认知在读文档之前为`0`，本科的时候操作系统课上的一坨，中科院怎么保研了个这样的废物。做这个实验就理解上和代码实现的抉择上感觉似乎都有不小的收获，但是理论知识落下后还是感觉不太舒服，应该把`OSTEP`尽可能快地看完了。
+
+尽可能还是不要破坏原本已经封装得很好的一个文件系统了，除非为库函数增加个人觉得有比较大意义的接口。
+### 从哪里入手？
+看了一下，本质上我们应该从`stat`这个任务下手，先搞清楚`stat`的存储位置和方式，然后再做其他的工作，就能迎刃而解。
+### 怎么入手？
+思考的思路具体如下：
+#### 方案一：通过Inode信息来得到stat数据
+`Inode`本身的数据存储的很深，其并不会以正常的数据结构来存储，而是采用了目录项来存储，目录项本质上是一个写在`Inode`之中的字节序列。
+
+我们可以利用`fd`得到我们的`OSInode`，那么问题就变成了在我们拥有`OSInode`的时候，应该怎样才能透过这层壳获得写在内部的目录项信息？为了实现这个目的，考虑采用部分`read`函数。
+
+利用`readall`并不是方法，这个方法是用来`read`整个`ELF`文件的，不合适。
+
+我通过阅读`create`函数，发现了一件事实，`inode`下利用`read_at`去阅读`Direct`信息仅仅能够获得自己名下的那些文件的`inode_id`信息，却似乎没办法获得自己的信息，这件事听起来好蠢啊。
+
+无论如何，想要在什么都没有的情况下单单利用`OSInode`中的`Inode`信息去还原`inode_id`等信息是没有太大性价比的，我们应该考虑在`Open`的时候顺带就把这件事情做的漂亮一些。
+#### 方案二：直接在OSInode中添加一个新的项叫做Stat，在open时信息尚充足时把数据填满
+感觉这件事情是比较有性价比的，我们采用第二条路径吧。
+
+然而，我理解错了文件描述符的实际意思：这是一个高度抽象的文件接口，如果采用之，就失去了本身利用`OSInode`进行管理的可能性。针对`OSInode`的一些函数并不能为我所用，得尝试考虑其他的方式。
+#### 方案三：在打开一个文件之后，向其内部写入我的stat数据，要用的时候就读出来，这样怎么样？
+我觉得可以试试看，感觉也比较靠谱？我们应该仿照`read`和`write`函数在抽象`File`之上的一些操作，以达到我们的目的。
+
+然而仔细思考了一下后发现是不行的，我们的`read`和`write`本质上是用来读写的，让`open`强写之会破坏可移植性，这可能不是个好点子。
+#### 方案四：我直接在进程TCB中尝试维护一个键值对？给我一个fd，我就去查询其中的stat信息？
+感觉这个方案靠谱很多了....而且能够解耦合，就尝试这么做做看吧。
+
+发现btreemap是可以用的，就用它吧，不知道空间够不够大。希望到头来没有堆的问题。×
+
+又陷入了一个坑，忘记了赋值的时候是要进行虚实地址转化的，我呆了。
+
+成功了！我们完成了伟大的第一步！
+
+接下来尝试完成`linkat`，但是我又有个问题了，这次我们没有`fd`，怎么得到想要的`stat`？
+
+再考虑`unlinkat`，这次我们也没有`fd`，怎么得到想要的`stat`？
+
+要做就尝试做到底！我们尝试在`TCB`内部再塞一个名字与`fd`对应的`BTreeMap`？
+
+但是有一件很可怕的事情，一个文件其实可以有多个`fd`，这样的策略因此也就报销了！
+
+不行了吗==，仅仅通过`name`来去寻找`fd`是不是有点别扭？
+
+先帝创业未半而中道崩殂。
+#### 方案五：stat就让它放在OSInode里好了？但是我给File多增加一些功能？
+可能只好这么做了？把`stat`和`File`绑定在一起，而不是和`fd`绑定在一起，这样在我用名字去查的时候能够得到相关的信息。
+
+为文件系统添加`stat`新功能！与调度用的操作系统解耦合！
+
+首先我们需要考虑抽象之间的对立关系：我们可以从`OSInode`在`fd_tables`上的管理特性了解到，本质上`OSInode`和`fd`是同一个东西，其中包含了读写之类的信息。
+
+而如果我们采用名字去访问一个文件，这其实反映的是，真正与`name`所对应的东西是`inode`，也就是说我们的`nlink,ino,mode`信息应该是根据分析`inode`来得知的。
+
+我们利用`fd_tables[fd]`作为结点的已经被打开的文件的使用者。
+- 在所有`Inode`初始化之时，为他们提供轻松获得`inode_id`，`StatMode`，以及`nlink`信息的接口
+- 打开文件时，创建`OSInode`，记录文件的结点`Inode`信息，其所产生的`fd`会存储在`fd_tables`之中，这个`fd`作为票据
+- 利用`sys_stat`时，我们根据`fd`的信息，从`fd_tables`获取对应的`File`，由于是`OSInode`的特定类型，我们可以得到`stat`具体信息
+- 利用`sys_linkat`时，我们根据`old_name`，无需去寻找`fd`，而是直接从`Inode`中读取我们想要的信息，并相应的对`nlink`之类的东东做修改
+- 利用`sys_unlinkat`时，这是硬币的正反面，不再赘述了
+
+一个问题，我的`Inode`似乎是写死的，不能修改上面存储的参数，这也意味着，方案五同样存在着弱点，有可能无法应付`nlink`无法修改的情况。不过这个真的待定，我不太清楚到底是哪里写错了，还要`debug`一下。
+
+那么，`nlink`应该存放在哪里？或许我们干脆不存放这个东西？不管文件有多少个，`Inode`所对应的`inode_id`有且仅有一个，可以去遍历相关的文件来查看`nlink`到底是多少。
+
+以`unlink`来看，我们需要根据`inode`当前有多少个文件，适时考虑在清空目录项的同时何时把`inode`一并删去
+
+终于做完了，好耶ヾ(✿ﾟ▽ﾟ)ノ！
+#### 收获：
+我推倒重来了很多次，但是没有被杀死！后续希望通过阅读书籍和做其他的相关项目完善自己对于文件系统的认识。
