@@ -529,6 +529,314 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     0
 }
 ```
+### 信号量
+两种信号量声明：`P`操作和`V`操作。`P`操作是检查信号量的值是否大于`0`，如果大于`0`，则将他的值减`1`并且继续。如果这个值为`0`，则线程将睡眠。
+
+在`P`操作中，检查/修改信号量值以及可能发生的睡眠这一系列操作， 是一个不可分割的原子操作过程。
+
+`V`操作会对信号量的值加`1` ，然后检查是否有一个或多个线程在该信号量上睡眠等待。如有，则选择其中的一个线程唤醒并允许该线程继续完成它的`P`操作；如没有，则直接返回。
+
+这两个操作的伪代码结构如下所示：其中`S`表示可以进入临界区的线程数目，当`S`取值为`1`，表示他是二值信号量，即为互斥锁。
+```rust
+fn P(S) {
+    if S >= 1
+        S = S - 1;
+    else
+        <block and enqueue the thread>;
+}
+fn V(S) {
+    if <some threads are blocked on the queue>
+        <unblock a thread>;
+    else
+        S = S + 1;
+}
+```
+信号量的另外一种实现如下所示：
+```rust
+fn P(S) {
+    S = S - 1;
+    if S < 0 then
+        <block and enqueue the thread>;
+}
+
+fn V(S) {
+    S = S + 1;
+    if <some threads are blocked on the queue>
+        <unblock a thread>;
+}
+```
+在这边的S的初始值一般为一个大于`0`的正整数，表示可以进入临界区的线程数，但是S的取值可以是小于`0`的，表示等待进入临界区的睡眠线程数。这种用途下的信号量可以用于同步，在我们把初始值设置为`0`时，就能体现出这个效果。
+```rust
+let static mut S: semaphore = 0;
+
+//Thread A
+...
+P(S); // 显然此处的A会睡眠
+Label_2:
+A-stmts after Thread B::Label_1; 
+...
+
+//Thread B
+...
+B-stmts before Thread A::Label_2;
+Label_1:
+V(S); // B唤醒了A，以此可以保证B线程的运行在A线程运行之前
+...
+```
+#### 信号量系统调用的实现：
+信号量是用于线程之间同步用的，因此非常显然也是由我们的进程来进行管理。
+```rust
+    /// semaphore list
+    pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
+```
+信号量具体涉及的数据结构如下所示：
+```rust
+/// semaphore structure
+pub struct Semaphore {
+    /// semaphore inner
+    pub inner: UPSafeCell<SemaphoreInner>,
+}
+
+pub struct SemaphoreInner {
+    // 当前S的大小
+    pub count: isize,
+    // 当前被要求去休眠的线程们
+    pub wait_queue: VecDeque<Arc<TaskControlBlock>>,
+}
+
+impl Semaphore {
+    /// Create a new semaphore
+    pub fn new(res_count: usize) -> Self {
+        trace!("kernel: Semaphore::new");
+        Self {
+            inner: unsafe {
+                UPSafeCell::new(SemaphoreInner {
+                    count: res_count as isize,
+                    wait_queue: VecDeque::new(),
+                })
+            },
+        }
+    }
+
+    /// up operation of semaphore，即V操作
+    pub fn up(&self) {
+        trace!("kernel: Semaphore::up");
+        let mut inner = self.inner.exclusive_access();
+        // 给S加一
+        inner.count += 1;
+        // 如果当前的S还是小于等于0，说明临界区现在并没有什么线程正在运行，可以唤醒预约好的客人来
+        // 需要从我们的等待队列唤醒一个线程
+        if inner.count <= 0 {
+            if let Some(task) = inner.wait_queue.pop_front() {
+                wakeup_task(task);
+            }
+        }
+    }
+
+    /// down operation of semaphore
+    pub fn down(&self) {
+        trace!("kernel: Semaphore::down");
+        let mut inner = self.inner.exclusive_access();
+        // 给S减一
+        inner.count -= 1;
+        // 如果当前的S小于0，则说明来的不是时候，建议睡一会儿，一会儿有人完事儿了就打电话通知
+        if inner.count < 0 {
+            inner.wait_queue.push_back(current_task().unwrap());
+            drop(inner);
+            block_current_and_run_next();
+        }
+    }
+}
+```
+这个模型是用于同步的，到底怎么操作得看用户程序具体的使用法则。
+### 条件变量
+条件变量是一个更高层次的同步原语，在有些情况下，线程需要检查某一条件满足之后，才会继续执行。
+
+一般来说，在满足一些条件之后，线程需要配合互斥锁以较为正确地完成带条件的同步流程，如下所示：
+```rust
+static mut A: usize = 0;
+unsafe fn first() -> ! {
+    mutex.lock();
+    A=1;
+    mutex.unlock();
+    ...
+}
+
+unsafe fn second() -> ! {
+    mutex.lock();
+    while A==0 {
+        mutex.unlock();
+        // give other thread a chance to lock
+        mutex.lock();
+    };
+    mutex.unlock();
+    //继续执行相关事务
+}
+```
+当然，上述的实现同样存在着一定的问题，因为需要忙等的原因，我们的程序跑起来比较低效。不如让second函数休眠一会儿？
+```rust
+static mut A: usize = 0;
+unsafe fn first() -> ! {
+    mutex.lock();
+    A=1;
+    wakup(second);
+    mutex.unlock();
+    ...
+}
+
+unsafe fn second() -> ! {
+    mutex.lock();
+    while A==0 {
+       wait();
+    };
+    mutex.unlock();
+    //继续执行相关事务
+}
+```
+然而，这样的执行方式同样是存在很大问题的，由于`second`是带着锁去睡觉的，`first`也同时拿不到锁，这样就出现死锁了，很不妙。
+
+如何等待一个条件？如何在条件为真时向等待线程发出信号？
+#### 基本思路：
+管程：任意时刻只能有一个活跃线程调用管程中的过程，这一特性使得线程在调用执行管程中过程时能够保证互斥，线程就可以很放心地去访问共享变量。
+
+管程是编程语言的组成部分，编译器知道它的特殊性，因此可以采用与其他过程调用不同的方法来处理对于管程的调用。
+
+然而，管程本身还需要做一些规定：
+- 等待机制：线程在调用管程中的某个过程中，发现某个条件不满足，那就无法继续运行而被阻塞。
+- 唤醒机制：另外一个线程可以在调用管程的过程中，把某个条件设置为真。
+- 还需要有一个机制：及时唤醒等待条件为真的阻塞线程。
+
+在`rCore`实验中似乎更加倾向于采用`Hansen`语义：执行唤醒操作的线程必须立即退出管程，即唤醒操作只可能作为一个管程过程的最后一条语句。唤醒线程的执行位置也因此会在此时离开管程。
+
+该方案的具体实现就是条件变量和它所对应的操作：`wait`和`signal`。线程使用条件变量来等待一个条件变成真。
+
+条件变量本质上是一个线程等待队列，如果条件不满足，线程会通过`wait`操作把自己加入到等待队列中。此外，在某个线程改变条件为真之后，就可以通过条件变量的`signal`操作来唤醒一个或者多个等待的线程，通过在该条件上发相关的信号，让他们继续执行。
+```rust
+static mut A: usize = 0;
+unsafe fn first() -> ! {
+    mutex.lock();
+    A=1;
+    condvar.wakup();
+    mutex.unlock();
+    ...
+}
+
+unsafe fn second() -> ! {
+    mutex.lock();
+    while A==0 {
+       condvar.wait(mutex); //在睡眠等待之前，需要释放mutex
+    };
+    mutex.unlock();
+    //继续执行相关事务
+}
+
+fn wait(mutex) {
+    mutex.unlock();
+    <block and enqueue the thread>;// 挂起后就会陷在这个位置，并且自己会与条件变量绑定在一起
+    mutex.lock();
+}
+
+fn signal() {
+    <unblock a thread>; // 找到挂在条件变量上睡眠的线程，把它唤醒
+}
+```
+一个简单的应用例子如下所示：
+```rust
+static mut A: usize = 0;   //全局变量
+
+const CONDVAR_ID: usize = 0;
+const MUTEX_ID: usize = 0;
+
+unsafe fn first() -> ! {
+    sleep(10);
+    println!("First work, Change A --> 1 and wakeup Second");
+    mutex_lock(MUTEX_ID);
+    // 改变条件变量，以满足second的条件
+    A=1;
+    // 火速唤醒second线程
+    condvar_signal(CONDVAR_ID);
+    mutex_unlock(MUTEX_ID);
+    ...
+}
+unsafe fn second() -> ! {
+    println!("Second want to continue,but need to wait A=1");
+    mutex_lock(MUTEX_ID);
+    while A==0 {
+        // 把自己和CONDVAR_ID绑定在一起
+        // 释放mutex锁并且阻塞（不可以带着锁入睡，不然会死锁
+        condvar_wait(CONDVAR_ID, MUTEX_ID);
+    }
+    mutex_unlock(MUTEX_ID);
+    ...
+}
+pub fn main() -> i32 {
+    // create condvar & mutex
+    assert_eq!(condvar_create() as usize, CONDVAR_ID);
+    assert_eq!(mutex_blocking_create() as usize, MUTEX_ID);
+    // create first, second threads
+    ...
+}
+
+pub fn condvar_create() -> isize {
+    sys_condvar_create(0)
+}
+pub fn condvar_signal(condvar_id: usize) {
+    sys_condvar_signal(condvar_id);
+}
+pub fn condvar_wait(condvar_id: usize, mutex_id: usize) {
+    sys_condvar_wait(condvar_id, mutex_id);
+}
+```
+#### 条件变量机制的系统调用实现
+与上述一致，条件变量是由我们的进程来进行管理的。
+```rust
+/// Condition variable structure
+pub struct Condvar {
+    /// Condition variable inner
+    pub inner: UPSafeCell<CondvarInner>,
+}
+
+pub struct CondvarInner {
+    // 内部是线程的等待队列
+    pub wait_queue: VecDeque<Arc<TaskControlBlock>>,
+}
+
+impl Condvar {
+    /// Create a new condition variable
+    pub fn new() -> Self {
+        trace!("kernel: Condvar::new");
+        Self {
+            inner: unsafe {
+                UPSafeCell::new(CondvarInner {
+                    wait_queue: VecDeque::new(),
+                })
+            },
+        }
+    }
+
+    /// Signal a task waiting on the condition variable
+    // 唤醒一个线程，本质上其实就是从等待队列中把它pop出来
+    pub fn signal(&self) {
+        let mut inner = self.inner.exclusive_access();
+        if let Some(task) = inner.wait_queue.pop_front() {
+            wakeup_task(task);
+        }
+    }
+
+    /// blocking current task, let it wait on the condition variable
+    // 陷入等待时，要把锁释放，以防止带着锁睡觉进入死锁状态
+    pub fn wait(&self, mutex: Arc<dyn Mutex>) {
+        trace!("kernel: Condvar::wait_with_mutex");
+        mutex.unlock();
+        let mut inner = self.inner.exclusive_access();
+        inner.wait_queue.push_back(current_task().unwrap());
+        drop(inner);
+        block_current_and_run_next();
+        mutex.lock();
+    }
+}
+```
+到这边，我们全部的源码解读就完成了。什么，系统调用没解读？我想把上面的机制搞清楚后，看系统调用真的很简单了。
 ## 实验：
 先尝试考虑把前一部分移植吧，我们需要完成`6b`对应的基本移植工作。
 
