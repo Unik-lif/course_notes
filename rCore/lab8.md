@@ -896,3 +896,112 @@ impl Condvar {
 [PASS] not found <FAIL: T.T>
 [PASS] not found <Test sbrk failed!>
 ```
+不过根据后来的一些测试，为了减少调试超时带来的麻烦，建议读者们把`get_sys_time`这个系统调用加上，其他的都可以不加。
+### 思路：
+这个死锁检测算法理解起来其实不难，但是如何把它做好呢？
+
+这边的算法似乎是给`blocking mutex`准备的，不过这个不重要。为了解耦合，我们应该考虑最好在系统调用这个层面做一些简单的修改，并不把相关的修改内陷到锁这个东西本身上。
+
+根据测试样例，基本上确定思路如下：
+#### 第一步：分成两半
+需要实现两个检测，其一是我们的锁的检测，这个实现起来目测不是很难，至少在`mutex`的检测上我们不需要套用在文档中提到的检测算法。具体来说，我们可以遍历一遍`mutex_list`，如果我们`mutex_id`是重复的，则返回错误。
+
+如何检测mutex_id已经被使用了？这边或许可以考虑
+
+当然，既然`enable`了死锁检测，我们需要在管理进程的`PCB`中添加一个项来说明我们确实添加了死锁检测。
+
+第一步完成，我们已经通过了`mutex_list`的测试。
+#### 第二步：semaphore测试
+检测算法面向的对象其实是我们的信号量，阅读了一下测试样例，通过纸笔绘画，基本确定了这个流程到底是怎么样的。
+
+考虑到`tid`的分配可能不是连续的，即`alloc_fd`可能不是递增分配的，个人感觉利用`BTreeMap`数据结构更加合适一些：
+```rust
+BTreeMap<tid, status>
+
+status {
+    need: Vec::new(),
+    allocation: Vec::new(),
+    finish: bool,
+}
+```
+然而，这样操作还是比较麻烦。如果可以的话，我们还是尽可能直接用数组吧。其实在这边只要能过测试感觉就足够了？偷个懒吧。之后如果有兴趣我们再用可以推广的方法来做。-> 然而检测发现线程号确实不确定，最好还是用推广的方法来做吧。
+
+因此下面的方案还是作废算了。
+```rust
+    /// Lab5: enable the deadlock detection.
+    pub dead_detect: bool,
+    /// Lab5: semaphore deadlock detection part.
+    /// I am a little afraid that my heap will overflow...
+    /// Lab5: available resources.
+    /// assume we at most have 10 threads and 10 kinds of semaphores.
+    pub available: [u32; 10],
+    /// Lab5: allocation vector.
+    pub allocation: [[u32; 10]; 10],
+    /// Lab5: need vector.
+    pub need: [[u32; 10]; 10],
+    /// Lab5: work vector for resources.
+    pub work: [u32; 10],
+    /// Lab5: finish vector for threads.
+    pub finish: [bool; 10],
+```
+死锁到底会不会发生不取决于我们在`TCB`内写入的这个算法，我的意思是，我们的调度工作和我们的判别工作本质上是独立的。判别工作只是判断在理论上我们的调度会不会出现问题，如果检测出问题能够提供我们一个快速退出的路径。
+
+虽然我们的线程是在动态地添加自己所对应的锁资源，但这与我们的检测行为并不是冲突的。但是，每次检测我们或许都需要把原来的`finish`归为`false`？与其这样子做，不如我每次都重新建立一个局部变量来做，这样就会自动释放掉，不需要再管理了。
+```rust
+    /// Lab5: semaphore deadlock detection part.
+    /// I am a little afraid that my heap will overflow...
+    /// Lab5: available resources.
+    /// assume we at most have 10 threads and 10 kinds of semaphores.
+    pub available: Vec<usize>,
+    /// Lab5: allocation vector.
+    pub allocation: Vec<Vec<usize>>,
+    /// Lab5: need vector.
+    /// pub need: Vec<Vec<usize>>,
+    /// Lab5: work vector for resources.
+    pub work: Vec<usize>,
+```
+#### 第三步：我们需要怎么修改我们的参数？
+据说这个算法叫做银行家算法。
+
+为了实现银行家算法的检测，我们需要对三个函数都做一些有针对性的修改。
+
+首先，在`create`函数中，我们获得了一些资源，为此需要更新`available`，由于id号的位置不确定，所以需要适时`extend`一下下。
+```rust
+    if process_inner.dead_detect {
+        if id >= process_inner.available.len() {
+            for _ in (process_inner.available.len() - 1)..id {
+                process_inner.available.push(0);
+            }
+        }
+        process_inner.available[id] += res_count;
+    }
+```
+第二，在`semaphore_up`函数中，我们会从之前分配的单元中重新得到我们的资源，此外当前线程利用`need`所对应的资源量会适时地减少。
+
+第三，在`semaphore_down`函数中，我们需要执行银行家算法的检测。
+
+第一步，我们需要把`need`写进去，表示这个需求的存在，这时候再考虑我们当前的情况是否有可能发生死锁状况。(对吗？不太对)
+
+第二步，我们需要遍历一遍我们的线程，检查每个线程所对应的资源是否可以被当前的`work`所满足。如果可以满足，我们回收相关的资源，把它写到一个`vec`中，存储它的`tid`信息。如果不能满足，我们继续往下遍历。
+
+特别的，我们每次在执行`semaphore_down`时都会对死锁情况进行了一个检查，而`need`表示接下来仍然需要分配的东西，这也就意味着其实我们每次的检查都是很简单的：每一步`need`实际上只有一个数，且对应的是当前线程`tid`和当前信号量`sem_id`。
+
+#### 重新整理一遍：
+在`semaphore_up`的实现中，仍然存在`tid`超出上述数据集的可能性。因此第一步，我们还是要看一下`tid`是否超过了范围，没有超过的话最好，超过的话要重复先前的`extend`过程。
+
+`work`其实是可以当做局部变量建立的，每次开始时均要和`available`保持一致。
+```rust
+    /// Lab5: semaphore deadlock detection part.
+    /// I am a little afraid that my heap will overflow...
+    /// Lab5: available resources.
+    /// assume we at most have 10 threads and 10 kinds of semaphores.
+    pub available: Vec<usize>,
+    /// Lab5: allocation vector.
+    pub allocation: Vec<Vec<usize>>,
+    /// Lab5: need vector.
+    pub need: Vec<Vec<usize>>,
+    /// Lab5: work vector for resources.
+    /// pub work: Vec<usize>,
+    pub matrix: (usize, usize),
+```
+最后用这样的数据结构通关了。
