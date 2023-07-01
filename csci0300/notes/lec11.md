@@ -16,3 +16,29 @@ int fd = open("data", O_WRONLY | O_CREAT | O_TRUNC | O_SYNC, 0666);
 
 
 后续涉及cache的实验内容已经在cs61c中实现过，此处就不再赘述。
+## Lec 13:
+On UNIX-like operating systems such as macOS and Linux, there are some standard file descriptor numbers. FD 0 normally refers to stdin (input from the terminal), 1 refers to stdout (output to the terminal), and 2 refers to stderr (output to the terminal, for errors). You can close these standard FDs; if you then open other files, they will reuse FD numbers 0 through 2, but your program will no longer be able to interact with the terminal.
+
+在Unix系统中的文件描述符0，1，2，均有妙用，而再去打开一个文件，则我的fd将从3开始向下计数。
+
+## Lec 16:
+Page Table策略不仅仅是为了效率，也是为了安全，其成为主流的方案确实存在很多优越的地方。
+
+在WeensyOS中，进程通过ptable进行管理，每一个进程均会链接着一个多级页表链。
+
+![](https://cs.brown.edu/courses/csci0300/2022/notes/assets/l14-page-tables.png)
+
+### 虚拟地址转换：
+Virtual Address Translation
+The x86-64 architecture uses four levels of page table. This is reflected in the structure of a virtual address:
+```
+63         47     38     29     20     11        0
++---------+------+------+------+------+-----------+
+| UNUSED  |  L4  |  L3  |  L2  |  L1  | offset    |
++---------+------+------+------+------+-----------+
+          |9 bits|9 bits|9 bits|9 bits| 12 bits
+```
+每一级页表的表项存放着下一级页表的基地址，以此向下逐步索引。最后一级页表则是直接fetch到我的
+
+## Lab 5：
+其实是一个很简单的实验，多折腾折腾就完事了。
