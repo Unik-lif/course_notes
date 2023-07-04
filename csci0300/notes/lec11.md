@@ -62,3 +62,69 @@ user    0m22.088s
 sys     0m0.669s
 ```
 实际经过的时间得到了缩短，说明确实多进程加快了程序的执行速度。
+## Lec 18:
+concurrency与parallelism的区别：
+
+前者其实是time-sharing的分时利用，而后者不一样，它表示的是同时。
+
+
+
+| Resource	| Processes (parent/child)	| Threads (within same process) |
+| ----- | ----------- | -------|
+| Code	| shared (read-only)  |	shared |
+| Global variables	| copied to separate physical memory in child	| shared|
+| Heap	| copied to separate physical memory in child |	shared |
+| Stack	| copied to separate physical memory in child |	not shared, each thread has separate stack |
+| File descriptors, etc.	| shared	| shared |
+
+总而言之，对于进程而言，除了代码和file descriptor，其余都有点不同。而线程则仅有自己的栈是不同的。
+
+C++的动态内存，即HEAP恰好是线程们均能看到的位置。因此我们更加推荐采用堆动态分配空间以在多个线程之间进行共享。
+## Lab7：
+在C++中利用vector来存放进程时，需要使用emplace_back比较合适。
+
+线程在C++和Rust中似乎都不允许进行拷贝操作，为此哪怕是利用emplace_back来设置，也应该是这个样子来创立：
+```C++
+vec.emplace_back(thread(func, args1, ...))
+```
+在Rust中似乎没这个麻烦，我直接进行clone拷贝一份就好了，非常轻松。
+
+此外，在Lab7有一个非常有意思的细节：
+
+我们用wordindex来做的时候，需要注意其应该分配在堆上。如果它不是分配在堆上的，则会有一些毛病。比如，没法被其他线程所知道。虽然在我们这边的例子中这或许不会带来太大的问题，但是address sanizer说这样可能会造成一些内存泄露的问题。
+
+此外，有一个bug我们de不出来，不过我目前貌似是明白了为何如此：
+```c++
+  for (int i = 0; i < num_threads; i++) {
+    wordindex* index = new wordindex;
+    index->filename = filenames[start_pos + i];
+    //printf("filename: %s, word: %s\n", index->filename.c_str(), word.c_str());
+    vecofThreads.push_back(thread(find_word, index, word));
+    printf("index: word: %s count:%d\n", word.c_str(), index->count);
+    total_count += index->count;
+    files.push_back(*index);
+  }
+```
+我们过早地将index塞到了files中，而此时很有可能子线程对于index的更新并没有完成，从而造成主线程读出来的东西存在滞后性。
+
+特别感谢chatgpt的鼎力帮助。
+
+做完这个实验后，原本关于线程执行前后这样的问题的方法论变得清晰了起来，我们来看看最后的实验结果吧。
+
+```
+多线程来跑
+-------
+Enter search term: 
+real    0m12.366s
+user    0m29.724s
+sys     0m1.561s
+
+顺序执行
+-------
+Enter search term: 
+real    0m27.770s
+user    0m23.818s
+sys     0m0.713s
+```
+
+玩得够久了，没想到玩玩这个东西花了三小时，牛魔，今天剩下时间得all in科研了，不然对不起我的老师。
