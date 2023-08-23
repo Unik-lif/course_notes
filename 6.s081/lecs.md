@@ -66,3 +66,13 @@ pro.c ----> proc.S ----> proc.o ----> use ld ---> kernel
 and etc.
 ```
 Think qemu as a true RISC-V circuit board.
+
+## Lec3: Page Table.
+One of the main features that Page Table that provide is the Isolation.
+
+How to do this? -> Address Space.
+
+Give every apps its own address spaces, including the Kernel.
+
+CPU transfers VA to MMU, which will map VA to PA. Every Map (The Page Table) will be stored in Memory, MMU simply go through the Memory.
+
