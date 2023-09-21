@@ -128,3 +128,15 @@ sys     0m0.713s
 ```
 
 玩得够久了，没想到玩玩这个东西花了三小时，牛魔，今天剩下时间得all in科研了，不然对不起我的老师。
+
+## Lab 8：
+这个Lab很简单，我这边没有记录，就这样吧
+
+## Lab 9:
+值得记忆`Protobufs`和`gRPC`这两个概念。
+
+What makes Protobufs convenient is that you only write a high-level description of the data you want to encode, and then the Protobuf compiler generates much of the encode/decode logic for you, in the language(s) of your choice. So for example, you could have a C++ server talk to clients written in Java, Go, or Python. As long as both the server and client are using the generated functions to encode/decode the Protobuf messages, they can understand each other!
+
+`gRPC`常常用`Protobufs`来表示数据
+
+目测这个实验和泛型之间的关系非常紧密，而我第一次看到泛型还是`Java`和`Rust`，不得不说如`Rust`语言它天生就有一些作为新事物的优越性质。
