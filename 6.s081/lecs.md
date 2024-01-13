@@ -76,3 +76,4 @@ Give every apps its own address spaces, including the Kernel.
 
 CPU transfers VA to MMU, which will map VA to PA. Every Map (The Page Table) will be stored in Memory, MMU simply go through the Memory.
 
+SiFive manual => riscv qemu hardware version.
