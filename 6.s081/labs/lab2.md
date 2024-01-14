@@ -633,4 +633,353 @@ forkret(void)
   usertrapret();
 }
 ```
-诶嘿，好像找到了。我们看到了`usertrapret`
+诶嘿，好像找到了。我们看到了`usertrapret`，钻进去玩玩：
+```C
+//
+// return to user space
+//
+void
+usertrapret(void)
+{
+  struct proc *p = myproc();
+
+  // we're about to switch the destination of traps from
+  // kerneltrap() to usertrap(), so turn off interrupts until
+  // we're back in user space, where usertrap() is correct.
+  intr_off();
+
+  // send syscalls, interrupts, and exceptions to trampoline.S
+  w_stvec(TRAMPOLINE + (uservec - trampoline));
+
+  // set up trapframe values that uservec will need when
+  // the process next re-enters the kernel.
+  p->trapframe->kernel_satp = r_satp();         // kernel page table
+  p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
+  p->trapframe->kernel_trap = (uint64)usertrap;
+  p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
+
+  // set up the registers that trampoline.S's sret will use
+  // to get to user space.
+  
+  // set S Previous Privilege mode to User.
+  unsigned long x = r_sstatus();
+  x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
+  x |= SSTATUS_SPIE; // enable interrupts in user mode
+  w_sstatus(x);
+
+  // set S Exception Program Counter to the saved user pc.
+  w_sepc(p->trapframe->epc);
+
+  // tell trampoline.S the user page table to switch to.
+  // NOTE: Link.
+  // store the satp info into the variables, therefore we can use it by passing it to fn.
+  uint64 satp = MAKE_SATP(p->pagetable);
+
+  // jump to trampoline.S at the top of memory, which 
+  // switches to the user page table, restores user registers,
+  // and switches to user mode with sret.
+  uint64 fn = TRAMPOLINE + (userret - trampoline);
+  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+}
+```
+在这边设置了`w_stvec`为`TRAMPOLINE + (uservec - trampoline)`，并且在为跳转到`userspace`之前做了就`trapframe`上的准备，诸如`kernel satp`页表位置，`kernel_sp`等等。
+
+之后，通过使用`fn`方式来解析内核`TRAMPOLINE + (userret - trampoline)`这个地址，并且跳转到这个函数为止，在内核地址空间中恰好对应了`userret`这个函数，内核地址空间的设置在这一节暂时还没涉及（是下一集的内容啊喂），目前只要知道那个位置确实是这个函数就行了。
+
+我们跳转过来了，来看看发生了什么事情？首先我们来看看传输进来的两个参数，一个是`TRAPFRAME`，一个是`satp`，根据`RISC-V`的调用规范，它们分别被存放到`a0`与`a1`寄存器之中。
+```S
+.globl userret
+userret:
+        # userret(TRAPFRAME, pagetable)
+        # switch from kernel to user.
+        # usertrapret() calls here.
+        # a0: TRAPFRAME, in user page table.
+        # a1: user page table, for satp.
+
+        # switch to the user page table.
+        
+        # NOTE: link
+        # To enable the user page table to find the instructions,
+        # the trampoline code should be equal in both user space and kernel space.
+        csrw satp, a1
+        # NOTE: link
+        # clear the TLB.
+        sfence.vma zero, zero
+
+        # put the saved user a0 in sscratch, so we
+        # can swap it with our a0 (TRAPFRAME) in the last step.
+
+        # NOTE: link
+        # store the a0 in the trapframe to sscratch
+        ld t0, 112(a0)
+        csrw sscratch, t0
+
+        # restore all but a0 from TRAPFRAME
+        ld ra, 40(a0)
+        ld sp, 48(a0)
+        ld gp, 56(a0)
+        ld tp, 64(a0)
+        ld t0, 72(a0)
+        ld t1, 80(a0)
+        ld t2, 88(a0)
+        ld s0, 96(a0)
+        ld s1, 104(a0)
+        ld a1, 120(a0)
+        ld a2, 128(a0)
+        ld a3, 136(a0)
+        ld a4, 144(a0)
+        ld a5, 152(a0)
+        ld a6, 160(a0)
+        ld a7, 168(a0)
+        ld s2, 176(a0)
+        ld s3, 184(a0)
+        ld s4, 192(a0)
+        ld s5, 200(a0)
+        ld s6, 208(a0)
+        ld s7, 216(a0)
+        ld s8, 224(a0)
+        ld s9, 232(a0)
+        ld s10, 240(a0)
+        ld s11, 248(a0)
+        ld t3, 256(a0)
+        ld t4, 264(a0)
+        ld t5, 272(a0)
+        ld t6, 280(a0)
+
+	      # restore user a0, and save TRAPFRAME in sscratch
+        csrrw a0, sscratch, a0
+        
+        # return to user mode and user pc.
+        # usertrapret() set up sstatus and sepc.
+        sret
+```
+感觉没什么好说的，把`trapframe`全部都`load`到这些通用寄存器上面，把某个进程的上下文信息装载进来。其他的一些小细节本人在这边用`# NOTE`注释做了标注。完成了这些事情后，我们会通过`sret`从`S-Mode`进入`U-Mode`，跳转回的地址是`sepc`寄存器所指示的位置。而在一开始的`userinit`中，这个地址指向了用户程序的`0`虚拟地址，这就有意思了。
+
+先前我们在上一节看到，为`0`的虚拟地址被存放了`initcode`中的字节信息，于是`initcode`中的指令就跑起来了，紧接着就开始进行一些系统调用的事情。特别的，我们注意到在上面分析的过程中，系统调用相关寄存器的设置已经完成了，现在我们跟踪一下`initcode`中的一些代码。
+```S
+# Initial process that execs /init.
+# This code runs in user space.
+
+#include "syscall.h"
+
+# exec(init, argv)
+.globl start
+start:
+        la a0, init
+        la a1, argv
+        li a7, SYS_exec
+        ecall
+
+# for(;;) exit();
+exit:
+        li a7, SYS_exit
+        ecall
+        jal exit
+
+# char init[] = "/init\0";
+init:
+  .string "/init\0"
+
+# char *argv[] = { init, 0 };
+.p2align 2
+argv:
+  .long init
+  .long 0
+```
+在这边通过`ecall`进入系统调用窗口之前，于此同时设置了`a7`为`SYS_exec`，设置了`a0`为`init`，`a7`为`argv`。根据先前的设置结果，`ecall`会进入`trampoline`中的`uservec`函数，方位由`stvec`寄存器所设置。特别的，我们需要注意，上一次进入离开内核态之时，`sscratch`寄存器已经被设置成了`trapframe`地址。
+```S
+	      #
+        # code to switch between user and kernel space.
+        #
+        # this code is mapped at the same virtual address
+        # (TRAMPOLINE) in user and kernel space so that
+        # it continues to work when it switches page tables.
+	      #
+	      # kernel.ld causes this to be aligned
+        # to a page boundary.
+        #
+.section trampsec
+.globl trampoline
+trampoline:
+.align 4
+.globl uservec
+uservec:    
+      	#
+        # trap.c sets stvec to point here, so
+        # traps from user space start here,
+        # in supervisor mode, but with a
+        # user page table.
+        #
+        # sscratch points to where the process's p->trapframe is
+        # mapped into user space, at TRAPFRAME.
+        #
+        
+	      # swap a0 and sscratch
+        # so that a0 is TRAPFRAME
+
+        # NOTE: link
+        # a0: init
+        # a1: argv
+        # a7: SYS_exec
+
+        # sscratch always 
+        csrrw a0, sscratch, a0
+
+        # save the user registers in TRAPFRAME
+        sd ra, 40(a0)
+        sd sp, 48(a0)
+        sd gp, 56(a0)
+        sd tp, 64(a0)
+        sd t0, 72(a0)
+        sd t1, 80(a0)
+        sd t2, 88(a0)
+        sd s0, 96(a0)
+        sd s1, 104(a0)
+        sd a1, 120(a0)
+        sd a2, 128(a0)
+        sd a3, 136(a0)
+        sd a4, 144(a0)
+        sd a5, 152(a0)
+        sd a6, 160(a0)
+        sd a7, 168(a0)
+        sd s2, 176(a0)
+        sd s3, 184(a0)
+        sd s4, 192(a0)
+        sd s5, 200(a0)
+        sd s6, 208(a0)
+        sd s7, 216(a0)
+        sd s8, 224(a0)
+        sd s9, 232(a0)
+        sd s10, 240(a0)
+        sd s11, 248(a0)
+        sd t3, 256(a0)
+        sd t4, 264(a0)
+        sd t5, 272(a0)
+        sd t6, 280(a0)
+
+        # kernel stack should set afterwards.
+
+      	# save the user a0 in p->trapframe->a0
+        csrr t0, sscratch
+        sd t0, 112(a0)
+
+        # restore kernel stack pointer from p->trapframe->kernel_sp
+        
+        # NOIE: kernel stack should be set 
+        # or we can't call functions in kernel mode.
+        ld sp, 8(a0)
+
+        # make tp hold the current hartid, from p->trapframe->kernel_hartid
+        ld tp, 32(a0)
+
+        # load the address of usertrap(), p->trapframe->kernel_trap
+        ld t0, 16(a0)
+
+        # restore kernel page table from p->trapframe->kernel_satp
+        
+        # NOTE: link
+        # set page table back to kernel space. / set satp back to kernel space. 
+        ld t1, 0(a0)
+        csrw satp, t1
+        sfence.vma zero, zero
+
+        # a0 is no longer valid, since the kernel page
+        # table does not specially map p->tf.
+
+        # jump to usertrap(), which does not return
+        jr t0
+
+```
+很自然，最后控制流跳转到了`usertrap`位置处。首先检查是否是从`user mode`跳转过来的，这个`SPP`表示`smode previous privilege`，它理应是`0`，所以会有这样的一个判别。
+
+由于现在我们的状态在`S-Mode`之中，中断理应都来自内核自身，所以特地做了这样一个设置`kernelvec`。
+```C
+//
+// handle an interrupt, exception, or system call from user space.
+// called from trampoline.S
+//
+void
+usertrap(void)
+{
+  int which_dev = 0;
+
+  if((r_sstatus() & SSTATUS_SPP) != 0)
+    panic("usertrap: not from user mode");
+
+  // send interrupts and exceptions to kerneltrap(),
+  // since we're now in the kernel.
+  w_stvec((uint64)kernelvec);
+
+  struct proc *p = myproc();
+  
+  // save user program counter.
+  p->trapframe->epc = r_sepc();
+  
+  if(r_scause() == 8){
+    // system call
+
+    if(p->killed)
+      exit(-1);
+
+    // sepc points to the ecall instruction,
+    // but we want to return to the next instruction.
+    p->trapframe->epc += 4;
+
+    // an interrupt will change sstatus &c registers,
+    // so don't enable until done with those registers.
+
+    // NOTE: link
+    // at least our settings are now completed. we can now set the interrupts on.
+    intr_on();
+
+    syscall();
+  } else if((which_dev = devintr()) != 0){
+    // ok
+  } else {
+    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    p->killed = 1;
+  }
+
+  if(p->killed)
+    exit(-1);
+
+  // give up the CPU if this is a timer interrupt.
+  if(which_dev == 2)
+    yield();
+
+  usertrapret();
+}
+```
+中断发生时，`sepc`寄存器自动存放着该跳转回去的`pc`地址，`scause`寄存器中存放着原因。在`syscall`的情况下，我们简单做一些设置，便通过`syscall`函数进入到系统调用`handler`位置了。现在我们便可以分析`syscall`函数。
+```C
+void
+syscall(void)
+{
+  int num;
+  struct proc *p = myproc();
+
+  num = p->trapframe->a7;
+  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    // call the syscalls[num]() function, return the value to a0 register in trapframe.
+    p->trapframe->a0 = syscalls[num]();
+  } else {
+    printf("%d %s: unknown sys call %d\n",
+            p->pid, p->name, num);
+    p->trapframe->a0 = -1;
+  }
+}
+```
+感觉这一步非常自然，把`trapframe`中的东西弹出来。原来一个较好版本的`syscall`信息是这么传递的，感觉确实要比`linux-svsm`中因为机密虚拟机而直接来做的方式要漂亮很多，也不需要那么`tricky`了。总之根据先前`a7`的值确定系统调用的号，调用这个函数，并且把结果返回到`a0`寄存器之中，这件事情就算是做完了。
+
+我们不具体来看在启动阶段调用的系统调用`exec`这个函数做了什么了，简单一看，确实该干嘛就干嘛嘛，像`fork`这一类的函数往往会比较麻烦，需要把全部机制搭建好再跑`exec`指令的。仅仅通过这么一则推文就尝试把全部细节搞清楚，是不是有点耍赖了呀。
+
+完成了`syscall`函数后，简单做一下判别（对应`else if`中的设置情况），决定是否通过`yield`来挂起`CPU`。
+
+最终，调用`usertrapret`函数，但是这一次的`epc`和`myproc`就得听`scheduler`和用户进程本身的话了。我们暂且不表。
+
+那么到这里，我们的源码解读就结束了。`risc-v`的细节虽然没有`x86`一样多，但是它的手册写的不是很好，想把整个事情这样梳理下来，我感觉还是有点点费劲的，更不用说一开始去写`xv6`内核的人了，感觉他们真的是很厉害的程序员。
+
+## 实验：
+目前手头有个项目在做，打算业余抽一点点小时间来做（实际上这边的源码解读也是业余做的呜呜呜）
+
