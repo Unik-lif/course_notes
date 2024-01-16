@@ -77,3 +77,21 @@ Give every apps its own address spaces, including the Kernel.
 CPU transfers VA to MMU, which will map VA to PA. Every Map (The Page Table) will be stored in Memory, MMU simply go through the Memory.
 
 SiFive manual => riscv qemu hardware version.
+## Lec4: RISC-V Convention
+RISC-V ISA is a modularize one, which means we can divide it into different modules, and select part of them on demand.
+
+`apropos` is an interesting thing that can help us to refer gdb instructions quickly.
+
+RISC-V also has compressed version, where `s*` registers are reduced.
+
+caller register => not preserved across function call.
+
+callee register => preserved across function call.
+
+so callee register during the calling process should restore the prior values, while caller register don't have to.
+
+我的意思是，让函数能够正常返回的`stack`机制是由操作系统来决定的还是由硬件来决定的？我在`xv6`中并没有看到操作系统决定之事的源代码，这看起来调用一个函数，并且在结束之后正常返回的机制是硬件实现的？
+
+这个过程似乎是由硬件来实现的，啊，真的好好奇，希望自己动手做一遍。
+
+using gdb command like `bt` and `frame n` and i `frame`, we can get the info of the stack frame.
