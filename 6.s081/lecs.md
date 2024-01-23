@@ -95,3 +95,11 @@ so callee register during the calling process should restore the prior values, w
 这个过程似乎是由硬件来实现的，啊，真的好好奇，希望自己动手做一遍。
 
 using gdb command like `bt` and `frame n` and i `frame`, we can get the info of the stack frame.
+## Lec5: Traps
+What you can do in Supervisor mode but not can do in User mode is not so much.
+
+for example, supervisor mode is still restricted to the page table where `satp` register sets.
+
+some gdb skills:
+1. `ctrl a + c` to enter qemu console.
+2. `info mem` to see memory page table in qemu.
