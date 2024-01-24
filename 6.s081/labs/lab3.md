@@ -10,7 +10,6 @@
     kinit();         // physical page allocator
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging
-    procinit();      // process table
 
     // In different branch of hartid => AP cores.
     // AP cores.
@@ -183,7 +182,11 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
     // page addree to PTE (get the higher position bit value), using "|" together to form a pte.
+    // perm is the permission the kernel has set.
     *pte = PA2PTE(pa) | perm | PTE_V;
+    // allocate until we reach the last, we should break.
+    // look back to the PGROUNDDOWN we set to va + size - 1
+    // therefore for size smaller than a page, we still can allocate one page.
     if(a == last)
       break;
     a += PGSIZE;
@@ -211,16 +214,25 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
+    // pagetable => some level of pagetable.
+    // always change pagetable, this one got 512 entries, but to reduce the memory we should allocate
+    // use the dynamic way to allocate the memory.
+
+    // get the offset value from va.
     pte_t *pte = &pagetable[PX(level, va)];
+    // have the entry, and the page table entry is also valid.
     if(*pte & PTE_V) {
+      // get the physical address of next level of pagetable.
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
+      // not exist. or not valid.
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
+  // get the ultimate pte address, level is equal to 0 now.
   return &pagetable[PX(0, va)];
 }
 ```
@@ -237,10 +249,12 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
 
+// the lower 10 bits are FLAGS.
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 
 // extract the three 9-bit page table indices from a virtual address.
-#define PXMASK          0x1FF // 9 bits
+#define PXMASK          0x1FF // 9 bits => to get the whole info of a level.
+// PGSHIFT is 12, adding 9 * level to get the right shift offset of the corresponding level.
 #define PXSHIFT(level)  (PGSHIFT+(9*(level)))
 #define PX(level, va) ((((uint64) (va)) >> PXSHIFT(level)) & PXMASK)
 
@@ -253,3 +267,20 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
 ```
+好像，也没什么好说的，看一看`specification`就好了。
+
+### kvminithart函数、
+```C
+// Switch h/w page table register to the kernel's page table,
+// and enable paging.
+void
+kvminithart()
+{
+  w_satp(MAKE_SATP(kernel_pagetable));
+  sfence_vma();
+}
+```
+也没干什么，我们刚刚分配了页表，起始的地址被记作`kernel_pagetable`，然后把它设置到`satp`寄存器上，仅此而已。看看手册就行，记得`MODE`高位做好设置。之后，把`TLB`表清空了就行。
+
+到这边，这代码分析是搞定了，我们可以推接下来的实验了。
+## 
