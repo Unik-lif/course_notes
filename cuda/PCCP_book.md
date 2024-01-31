@@ -64,3 +64,56 @@ A heterogeneous application consists of two parts:
 To better our performance, we'd better run sequential portion in CPU, and run Compute intensive portion in GPU. A programming model named CUDA is designed to support joint CPU + GPU execution of an application.
 
 The thread in GPU and CPU is a little different, the GPU thread is a relative a lighter one.
+
+### CUDA hierarchy
+- Memory hierarchy structure
+
+- Thread hierarchy structure
+
+Three key abstractions:
+1. a hierarchy of thread groups
+2. a hierarchy of memory groups
+3. barrier synchronization
+
+## Chapter 2: CUDA Programming Model
+For a Programmer, view parallel computation from different levels:
+1. Domain Level: decompose data and functions so as to solve the problem correctly and efficiently while running in a parallel environment
+2. Logic Level: 
+3. Hardware Level
+### Programming Structure
+NVIDIA introduced a programming model improvement called Unified Memory starting with CUDA 6, which allows you to access both the CPU and GPU memory using a single pointer.
+
+A typical processing flow of a CUDA program follows this pattern:
+1. Copy data from CPU memory to GPU memory
+2. Invoke kernels to operate on the data stored in GPU memory
+3. Copy data back from GPU memory to CPU memory
+
+### Managing Memory
+GPU has two major ingredients in memory structure: global memory and shared memory.
+
+global memory => CPU system memory => shared in One Grid
+
+shared memory => CPU cache => shared in One Block
+
+Grid => Blocks => Threads
+1. blockIdx: block index within a grid
+2. threadIdx: thread index within a block
+
+The coordinate variable is of type uint3, a structure containing three unsigned integers with x,y,z fields respectively.
+
+The dimensions of a grid and a block are specified by following two built-in variables:
+1. blockDim: block dimension, measured in threads.
+2. gridDim: grid dimension, measured in blocks.
+
+Two distinct sets of grid and block variables in a CUDA program:
+1. manually-defined dim3 data type: only visible on the host side. => Judge the dimension of Grid and Block.
+2. pre-defined uint3 data type: only visible on the device side.
+### Launching a CUDA kernel
+A CUDA kernel call is a direct extension to the C function syntax that adds a kernel's exeuction configuration inside triple-angle-brackets.
+```C
+kernel_name <<<grid, block>>>(argument list)
+```
+
+By specifying the grid and block dimensions, we configure:
+1. the total number of threads for a kernel
+2. the layout of the threads you want to employ for a kernel
