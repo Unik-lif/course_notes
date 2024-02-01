@@ -117,3 +117,8 @@ kernel_name <<<grid, block>>>(argument list)
 By specifying the grid and block dimensions, we configure:
 1. the total number of threads for a kernel
 2. the layout of the threads you want to employ for a kernel
+
+A kernel function is the code to be executed on the device side. In a kernel function, you define the computation for a single thread, and the data access for that thread.
+
+When the kernel is called, many different CUDA threads perform the same computation in parallel.
+### Timing your kernel
