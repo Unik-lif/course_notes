@@ -32,3 +32,9 @@ we get 14 properites of computer systems:
 - iphone
 
 These properties have some confflicts. => all these lead to more complexity.
+
+Problems:
+1. Emergent properties => properties are not considered at design time.
+2. Propagation of effects => butterfly effort.
+3. Incommensurate scaling => design for small model may not scale.
+4. Trade-offs => can't sell the cow and drink the milk.
