@@ -51,7 +51,8 @@ Some methods:
 2. Abstraction: Interface/Hiding
 3. Layering: gradually build up capabilities
 4. Hierarchy: Reduce connections, divide & conquer
-
+### Paper reading:
+Perfiso: performance isolation for commercial latency-sensitive services
 ## lec2: Scalability in Practice
 In modern Life, each click on the website needs thousands of servers to cooperate.
 
@@ -83,5 +84,45 @@ To scale:
 5. using distributed file system
 6. using CDN.
 - content delivery network caches the content at the network providers, which is closer to users.
-7. separate different applications
+7. separate different applications + distributed computing
 - dedicated servers for different applications.
+
+Distributed System: a collection of independent/autonomous connected through a communication network working together hosts to perform a service.
+
+### Faults:
+faults are common especially in distributed systems => Scale!
+
+MTBF: mean time between failures
+
+in a distributed system, some parts of the system can be broken in some unpredictable way, such failure is partial (aka. grey failure)
+
+We want the system still working!
+
+common fault: network partition
+### reliability:
+Metrics to measure reliability:
+- MTTF: mean time to failure
+- MTTR: mean time to repair
+- MTBF: mean time between failure
+- MTBF = MTTF + MTTR
+
+on the other hand, large-scale systems can be highly available.
+
+challenge: consistency
+
+The CAP theorem:
+- consistency, availability & partition tolerance
+- C: all nodes see the same data at the same time
+- A: a guarantee that every request receives a response about whether it succeeded or failed.
+- P: the system continues to operate despite arbitrary message loss or failure of part of the system.
+
+AP: sacrifice C.
+
+CP: sacrifice A.
+### Paper reading:
+The Datacenter as a Computer - An introduction to the design of warehouse scale machines.
+
+## Lec3: Inode-based File System
+Two key properties:
+1. durable & has a name.
+2. high-level version of the memory abstraction
