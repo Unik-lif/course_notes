@@ -224,4 +224,40 @@ Mapping:
 ```C
 procedure name_to_inode(string filename, int dir) -> int
     return lookup(dir, filename)
+
+procedure lookup(string filenmae, int dir) -> int
+    block b
+    inode i = inode_number_to_inode(dir)
+    if i.type!= Directory then return failure
+    for offset from 0 to i.size - 1 do
+        b <- inode_number_to_block(offset, dir)
+        if string_match(filename, b) then
+            return inode_number(filename, b)
+        offset <- offset + BLOCKSIZE
+    return failure
+```
+#### L5: path name layer
+Also describes the directories and files.
+
+links: create shortcut for long names.
+
+unlink: remove the binding of filename to inode number.
+
+a inode can bind multiple file names.
+
+No cycle for link => cause very strange results.
+
+#### L6: absolute path name layer
+#### L7: symbolic link layer
+Name files on other disks
+- inode is different on other disks
+- supports to attach new disks to the name space
+
+soft link(symbolic link) -> add another type of indoe
+
+soft-link links file by file name.
+
+soft-link: to use the physical directory structure instead of following symbolic links.
+```
+cd -P ..
 ```
