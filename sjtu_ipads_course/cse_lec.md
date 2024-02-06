@@ -126,3 +126,102 @@ The Datacenter as a Computer - An introduction to the design of warehouse scale 
 Two key properties:
 1. durable & has a name.
 2. high-level version of the memory abstraction
+
+The big picture is shown below:
+```
+User: 
+    App-1 App-2 App-3
+--------------------------    Open("a.txt", "rw")
+                              Read(...)
+Kernel:                       Write(...)
+        File System           
+        Disk Driver
+
+--------------------------    Read(block_addr, buf)
+Hardware:                     Write(block_addr, buf)
+    Memory          Disk
+```
+In Unix File System, many APIs <=> Abstractions exist.
+
+In a Naive File System, each file occupies one continuous range of blocks.
+- Use `block index` as file name.
+- Every file write will either `append` or `reallocate`
+
+The problems exist: Fragmentation.
+
+### inode: 7 software layers.
+#### L1: block layer
+This layer **maps the block number to the block data**.
+```C
+procedure: block_number_to_block(int b) -> block
+
+return devices[b]
+```
+How to know the size of block?
+- metadata => super block!
+
+In a file system, we got one superblock, kernel reads superblock when mount the FS.
+
+it contains:
+- size of the blocks: always a trade-offs
+- number of free blocks
+- a list of free blocks: to track free blocks, we can use a bitmap.
+- other metadata of the file system (including inode info)
+#### L2: file layer
+File requirements:
+- store items that are larger than one block
+- may grow or shrink over time
+- a file is a linear array of bytes of arbitrary length
+- record which blocks belong to each file
+
+inode(index node)
+- a container for metadata about the file.
+```C
+struct inode {
+    int block_nums[N];
+    int size;
+};
+```
+
+File -> Block -> Disk Block
+```C
+procedure inode_to_block(int offset, inode i) -> block
+    o <- offset/BLOCKSIZE
+    b = index_to_block_num(i, o)
+    return block_number_to_block(b)
+
+procedure index_to_block_number(inode i, int index) -> int
+    return i.block_nums[index]
+```
+#### L3: inode number layer
+mapping: inode number -> inode
+```C
+procedure inode_number_to_inode(int num) -> inode
+    return inode_table[num]
+```
+
+managers the inode using a inode table.
+```C
+procedure inode_number_to_block(int offset, int inode_number) -> block
+    inode i = inode_number_to_inode(inode_number)
+    o <- offset/BLOCKSIZE
+    b <- index_to_block_number(i, o)
+    return block_number_to_block(b)
+```
+Now the OS get a way to use inode to operate on the device blocks, but it is not user-friendly, we should provide another abstraction layer to mke it more user-friendly.
+
+#### L4: File Name Layer
+File name
+- Hide metadata of file management
+- Files and I/O devices
+
+Mapping:
+- mapping table is saved in directory
+- default context: current working directory
+- - context reference is an inode number
+- - the current working directory is also a file
+
+```C
+procedure name_to_inode(string filename, int dir) -> int
+    return lookup(dir, filename)
+```
