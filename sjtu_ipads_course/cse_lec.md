@@ -261,3 +261,34 @@ soft-link: to use the physical directory structure instead of following symbolic
 ```
 cd -P ..
 ```
+## Lec4: File system API and Disk I/O
+File System API is implemented as system calls to user applications.
+
+### Why File Descriptor?
+Other options:
+- Option-1: OS returns an inode pointer
+- Option-2: OS returns all the block numbers of the file
+
+Reasons:
+- user can never access kernel's data structure
+- all file operationsa are done by the kernel
+
+fd_table vs file_table
+- one file_table for the whole system: records info for opened files
+- one fd_table for each process: records mapping of fd to index of the file_table
+
+something like this:
+![](pngs/Screenshot%202024-02-07%20094922.png)
+
+Some API implementation Methodlogy:
+- fetch the inode -> get basic info of the file.
+- fetch the block -> get the context of the file.
+
+for atime in inode => reflects the access time of the file corresponds to the inode.
+
+The updates of the file system might be interrupted, so how can we make it atomic?
+- a very good question to think about.
+
+Other filesystems: FAT - file allocation tables.
+### FAT32
+use linked list to manage the blocks.
