@@ -286,10 +286,260 @@ kvminithart()
 ## 其他部分（实验后发现需要继续阅读）
 内核部分就内存空间的初始化我们是看到了，现在我们需要看一下用户空间这件事情是怎么做到的。
 
+实验二对于用户进程所对应的地址空间做了一些相应的研究，我们也需要对这一部分代码做一个简单的解读。
+
+尝试分析`procinit`函数，如下所示：
+```C
+// initialize the proc table at boot time.
+void
+procinit(void)
+{
+  struct proc *p;
+  
+  initlock(&pid_lock, "nextpid");
+  // go through the proc array
+  for(p = proc; p < &proc[NPROC]; p++) {
+      // initialize every proc's lock.
+      initlock(&p->lock, "proc");
+
+      // Allocate a page for the process's kernel stack.
+      // Map it high in memory, followed by an invalid
+      // guard page.
+
+      // allocate the kernel stack of the process.
+      char *pa = kalloc();
+      if(pa == 0)
+        panic("kalloc");
+      // I have a test on p - proc value, it is simply a array ranged from 0..10
+      // act as the kernel stack of these processes.
+      uint64 va = KSTACK((int) (p - proc));
+      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      p->kstack = va;
+  }
+  kvminithart();
+}
+```
+挺直白的，在注释上写了。
+
+另外还有一个部分，反映程序跑起来的情况：
+```C
+// Per-CPU process scheduler.
+// Each CPU calls scheduler() after setting itself up.
+// Scheduler never returns.  It loops, doing:
+//  - choose a process to run.
+//  - swtch to start running that process.
+//  - eventually that process transfers control
+//    via swtch back to the scheduler.
+void
+scheduler(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+  
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    
+    int found = 0;
+    for(p = proc; p < &proc[NPROC]; p++) {
+      // fetch current proc.
+      acquire(&p->lock);
+      // ensure the state of the process is runnable.
+      if(p->state == RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        p->state = RUNNING;
+        c->proc = p;
+        // switch current cpu's context to the process's context
+        swtch(&c->context, &p->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+
+        found = 1;
+      }
+      release(&p->lock);
+    }
+#if !defined (LAB_FS)
+    if(found == 0) {
+      intr_on();
+      asm volatile("wfi");
+    }
+#else
+    ;
+#endif
+  }
+}
+```
+此处的`mycpu`对`cpu`数组做了一次简单的读取工作：找到需要处理的对应`cpu`数据结构。
+```C
+// Must be called with interrupts disabled,
+// to prevent race with process being moved
+// to a different CPU.
+int
+cpuid()
+{
+  int id = r_tp();
+  return id;
+}
+
+// Return this CPU's cpu struct.
+// Interrupts must be disabled.
+struct cpu*
+mycpu(void) {
+  int id = cpuid();
+  struct cpu *c = &cpus[id];
+  return c;
+}
+```
+切换工作的时候，调用了`swtch`函数，我们陷入进去看一下：
+```C
+.globl swtch
+swtch:
+        sd ra, 0(a0)
+        sd sp, 8(a0)
+        sd s0, 16(a0)
+        sd s1, 24(a0)
+        sd s2, 32(a0)
+        sd s3, 40(a0)
+        sd s4, 48(a0)
+        sd s5, 56(a0)
+        sd s6, 64(a0)
+        sd s7, 72(a0)
+        sd s8, 80(a0)
+        sd s9, 88(a0)
+        sd s10, 96(a0)
+        sd s11, 104(a0)
+
+        ld ra, 0(a1)
+        ld sp, 8(a1)
+        ld s0, 16(a1)
+        ld s1, 24(a1)
+        ld s2, 32(a1)
+        ld s3, 40(a1)
+        ld s4, 48(a1)
+        ld s5, 56(a1)
+        ld s6, 64(a1)
+        ld s7, 72(a1)
+        ld s8, 80(a1)
+        ld s9, 88(a1)
+        ld s10, 96(a1)
+        ld s11, 104(a1)
+        
+        ret
+```
+其实也很简单，把当前状态存储到当前`cpu`所对应的`context`之中，并读取`process`所对应的`context`信息。
 ## 实验
 ### 实验一：page table print
 可以直接参考`freepagewalk`时的做法，很轻松就能实现。注意这边的递归可能处理起来比较麻烦，因此我使用了一个辅助函数，并且用了一个`level`变量来帮忙打印层级。
 
 ### 实验二：为每个进程分配一个kernel page table
 这个实验似乎是为了性能和可用性来考虑，为了让`kernel`能够轻松地去获得用户进程的变量地址，需要为每个用户进程做一个内核地址空间，使得内核可以直接对相关变量进行访问，而不需要转换成物理地址再去处理。
+
+在这一步我们仅仅需要为每个用户进程生成一个内核页表的副本，在下一步我们才会完成地址翻译的加速工作。
+
+在做这个实验的时候，需要判断在`freeproc`的时候，是否完全把页表给释放干净了，这一点可以通过前面实现的`vmprint`来完成，不过似乎在很多情况下，情况并不如我们所愿。
+
+打印出来的结果是这个样子的：
+```
+page table 0x0000000087e87000                                                                                                                                                                              
+..0: pte 0x0000000021fa1801 pa 0x0000000087e86000                                                                                                                                                          
+.. ..16: pte 0x0000000021fa0c01 pa 0x0000000087e83000                                                                                                                                                      
+.. ..96: pte 0x0000000021fa0801 pa 0x0000000087e82000                                                                                                                                                      
+.. ..97: pte 0x0000000021f9bc01 pa 0x0000000087e6f000                                                                                                                                                      
+.. ..128: pte 0x0000000021fa1401 pa 0x0000000087e85000                                                                                                                                                     
+..2: pte 0x0000000021f9c001 pa 0x0000000087e70000                                                                                                                                                          
+.. ..0: pte 0x0000000021f9c401 pa 0x0000000087e71000                                                                                                                                                       
+.. ..1: pte 0x0000000021f9c801 pa 0x0000000087e72000                                                                                                                                                       
+.. ..2: pte 0x0000000021f9cc01 pa 0x0000000087e73000                                                                                                                                                       
+.. ..3: pte 0x0000000021f9d001 pa 0x0000000087e74000                                                                                                                                                       
+.. ..4: pte 0x0000000021f9d401 pa 0x0000000087e75000                                                                                                                                                       
+.. ..5: pte 0x0000000021f9d801 pa 0x0000000087e76000                                                                                                                                                       
+.. ..6: pte 0x0000000021f9dc01 pa 0x0000000087e77000                                                                                                                                                       
+.. ..7: pte 0x0000000021f9e001 pa 0x0000000087e78000                                                                                                                                                       
+.. ..8: pte 0x0000000021f9e401 pa 0x0000000087e79000                                                                                                                                                       
+.. ..9: pte 0x0000000021f9e801 pa 0x0000000087e7a000
+```
+其实一开始还真没有意识到，其实这边没有任何`leaf page`了，我一直以为我有哪些东西没有清空掉，找了很久但还是没有找到，现在也就是说，我们的`free`已经把所有的`PTE`项给清空了。那么其实只要做一件事情就好，把这边的`pde`给清理了。
+
+那么我们直接去找有没有相关的函数，结果发现函数freewalk正好能用，需要注意的是，它自己会把自己给清空干净，所以不需要再清空了，清空后也不能打印了，否则可能会得到这个值：
+```
+after free walk
+page table 0x0000000087e87000
+..1: pte 0x0101010101010101 pa 0x0404040404040000
+scause 0x000000000000000d
+sepc=0x000000008000198a stval=0x0404040404040000
+panic: kerneltrap
+```
+看到`pte`和`pa`中的数值，你可能马上回想起`kfree`中的设置。总而言之，它已经被清空了。
+
+### 实验三：
+这个实验似乎是要把`copyin`函数变得很快，这样就不需要通过跨`pagetable`的地址翻译，
+
+这里使用的策略似乎是，需要依赖用户的虚拟地址和内核虚拟地址不相互重叠，对于用户的虚拟地址来说，`xv6`是从`0`开始计量的。
+
+我们先看看原本为什么`copyinstr`之类的能够成功。
+```C
+// Copy from kernel to user.
+// Copy len bytes from src to virtual address dstva in a given page table.
+// Return 0 on success, -1 on error.
+int
+copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
+{
+  uint64 n, va0, pa0;
+
+  while(len > 0){
+    // pa0
+    va0 = PGROUNDDOWN(dstva);
+    // get the corresponding physical address.
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0)
+      return -1;
+    // va0 is the start address of the virtual page.
+    // dstva is the position we want to copy in user page table.
+    // here we will copy max for PGSIZE - (dstva - va0) length of bytes.
+    n = PGSIZE - (dstva - va0);
+    if(n > len)
+      n = len;
+    // copy the physical address to this physical address.
+    memmove((void *)(pa0 + (dstva - va0)), src, n);
+
+    len -= n;
+    src += n;
+    dstva = va0 + PGSIZE;
+  }
+  return 0;
+}
+
+// Copy from user to kernel.
+// Copy len bytes to dst from virtual address srcva in a given page table.
+// Return 0 on success, -1 on error.
+int
+copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+{
+  uint64 n, va0, pa0;
+
+  while(len > 0){
+    va0 = PGROUNDDOWN(srcva);
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0)
+      return -1;
+    n = PGSIZE - (srcva - va0);
+    if(n > len)
+      n = len;
+    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+
+    len -= n;
+    dst += n;
+    srcva = va0 + PGSIZE;
+  }
+  return 0;
+}
+```
+根据上面的注释，我们可以看到总体来说要做的事是逐个对地址进行翻译，翻译成物理地址，之后再进行拷贝的操作，不过这个过程看起来相当复杂，因为每复制一个页面，都需要在页表空间中作一个设置。
+
+为了降低这边工作的复杂性，需要在`kernel_pagetable`中添加用于用户自身虚拟地址翻译的一部分。
 
