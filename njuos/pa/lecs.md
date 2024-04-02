@@ -86,3 +86,73 @@ void idex() {
     }
 }
 ```
+## Lec4:
+`Git`和`Github`与代码仓库，尽可能生成一个`diverse`的测试生成脚本。
+
+怎么写项目的`Makefile`。
+
+查询`github`上对于论文的精选资源。
+
+`github`工作区：我们所能看到的文件
+
+`github`的暂存区：`Stage`，我们希望通过`commit`上传的一小部分文件
+
+这边的方法论在于：我没有必要对所有的文件进行`commit`。
+
+`git merge`：合并多人协作时的场景。
+
+visualizing git concepts with D3
+
+白名单：`.gitignore`文件
+
+`.git`文件中包含着`OJ`想要知道的一切。
+
+`PA`究竟在做什么？在做一个`AM`，即`Abstract Machine`。
+
+`vim`的插件配置：
+```
+nerdtree, themes, ctags(代码跳转)
+```
+
+其他一些听起来比较有意思的工具：
+```
+difftest，sdb
+```
+### Lec5: Nemu框架选讲
+`Makefile`是一个`declarative`的代码，描述了构建目标之间的依赖关系和更新方法。
+
+尝试去读懂`Makfile`内部的语法，了解项目构建的意思。
+
+以管道的方式拷贝到`vim`中。
+```
+make -nB \
+    | grep -ve ''
+    | vim -
+```
+
+`ld`对应的链接器和`gcc`使用的链接器是不一样的，前者是默认配置，还需要把很多动态库比如`libc.a`等链接进来，后面的只需要加上我们自己写的头文件就行。
+
+现代文档编写方式：`docs as code`
+
+`auto_config`
+
+`gcc -E`预编译看一下宏是否被定义了。
+
+`static`关键字，可以用于让某个函数或者变量仅在某个文件中可见，就能做到避免某个编译单元有两份可见的函数定义。
+
+`static inline`关键字，告诉编译器，建议以内联的方式来使用它，不把它当做一个真正的函数，典型的以空间换时间的函数，一般希望这个函数很小。
+
+尽可能要给宏加上括号，避免一些预编译时复制粘贴上的影响：
+```
+#define assert(cond) if (!(cond)) panic(...);
+
+if (...) assert(0);
+else ...
+```
+=> else将会基于文法匹配到`panic`，就近匹配。
+
+如何高效地使用`Vim`编辑器来进行跳转？需要频繁的进行代码跳转。
+
+难以调试的原因：
+- 两层软件抽象，monitor 与 gdb
+- 
