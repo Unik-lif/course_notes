@@ -541,5 +541,319 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 ```
 根据上面的注释，我们可以看到总体来说要做的事是逐个对地址进行翻译，翻译成物理地址，之后再进行拷贝的操作，不过这个过程看起来相当复杂，因为每复制一个页面，都需要在页表空间中作一个设置。
 
-为了降低这边工作的复杂性，需要在`kernel_pagetable`中添加用于用户自身虚拟地址翻译的一部分。
+为了降低这边工作的复杂性，需要在`kernel_pagetable`中添加用于用户自身虚拟地址翻译的一部分，这样一来，内核就不用通过`pgtbl_walk`来对具体的字节位置进行翻译。
 
+我们就可以比较顺畅地使用下面的两个函数：
+```C
+// Copy from user to kernel.
+// Copy len bytes to dst from virtual address srcva in a given page table.
+// Return 0 on success, -1 on error.
+int
+copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+{
+  struct proc *p = myproc();
+
+  // outfit the process virtual address space size.
+  // or overflow.
+  if (srcva >= p->sz || srcva+len >= p->sz || srcva+len < srcva)
+    return -1;
+  // copy srcva to dst, with len bytes size.
+  memmove((void *) dst, (void *)srcva, len);
+  stats.ncopyin++;   // XXX lock
+  return 0;
+}
+
+// Copy a null-terminated string from user to kernel.
+// Copy bytes to dst from virtual address srcva in a given page table,
+// until a '\0', or max.
+// Return 0 on success, -1 on error.
+int
+copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+{
+  struct proc *p = myproc();
+  char *s = (char *) srcva;
+  
+  stats.ncopyinstr++;   // XXX lock
+  for(int i = 0; i < max && srcva + i < p->sz; i++){
+    dst[i] = s[i];
+    if(s[i] == '\0')
+      return 0;
+  }
+  return -1;
+}
+```
+首先我们看向用户虚拟地址空间是什么时候被设置的，看起来一开始初始化的时候是空的一个页表，似乎不太构成什么参考价值，真正开始起作用似乎是从`userinit`这边开始，我们的目标是在进程所对应的内核地址中，先亦步亦趋地将映射到进程的`kernel_pagetable`之中去。
+
+这件事情看上去不是特别难，我们暂时可以先简单考虑一下先前所说的`PLIC`的范围限制，这个限制的大意似乎是：
+- 对于小于`PLIC`范围的虚拟地址空间，我们可以对其进行加速。因此，在上面对于kernel_pagetable的映射之中，我们需要判断涉及的虚拟地址数值范围，如果大于`PLIC`了，就不要再做`mappings`了，否则容易造成混淆，也就是说一个虚拟地址可能会映射到两个物理地址上。我们知道，页表的映射允许一个物理地址映射到多个虚拟地址，但是反过来是不行的。
+- 对于大于`PLIC`范围的虚拟地址空间，我们还是按照原本的方案来做。
+
+
+
+长期没写，寄了，我们可能得重新开始干。
+
+我们首先需要搞清楚，进行内存分配的函数是什么样子的：
+```C
+// Create PTEs for virtual addresses starting at va that refer to
+// physical addresses starting at pa. va and size might not
+// be page-aligned. Returns 0 on success, -1 if walk() couldn't
+// allocate a needed page-table page.
+int
+mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + size - 1);
+  for(;;){
+    // walk 函数如果返回值为0，则 return -1
+    // 特别的，这边还是有 alloc 的情况下，说明空间满了
+    if((pte = walk(pagetable, a, 1)) == 0)
+      return -1;
+    // 如果已经分配过了， PTE_V 会被设置
+    // 这边居然直接 panic 了，似乎是不应该的，在某些场景下我们需要对页表权限做一些修改
+    if(*pte & PTE_V)
+      panic("remap");
+    *pte = PA2PTE(pa) | perm | PTE_V;
+    if(a == last)
+      break;
+    a += PGSIZE;
+    pa += PGSIZE;
+  }
+  return 0;
+}
+
+// walk函数如下所示
+// Return the address of the PTE in page table pagetable
+// that corresponds to virtual address va.  If alloc!=0,
+// create any required page-table pages.
+//
+// The risc-v Sv39 scheme has three levels of page-table
+// pages. A page-table page contains 512 64-bit PTEs.
+// A 64-bit virtual address is split into five fields:
+//   39..63 -- must be zero.
+//   30..38 -- 9 bits of level-2 index.
+//   21..29 -- 9 bits of level-1 index.
+//   12..20 -- 9 bits of level-0 index.
+//    0..11 -- 12 bits of byte offset within the page.
+pte_t *
+walk(pagetable_t pagetable, uint64 va, int alloc)
+{
+  if(va >= MAXVA)
+    panic("walk");
+  // 建议画一张图，这边的代码是对的
+  // 有 pagetable 的结构，至少说明 level 2 所对应的 PTE 这边是存在页的
+  // 从 level 2 开始向下遍历
+  for(int level = 2; level > 0; level--) {
+    // 对 va 中所对应 level 2 的部分虚拟地址做解析，得到对应是页表的第几项
+    pte_t *pte = &pagetable[PX(level, va)];
+    // 选取下一级的 base 地址，之后继续利用 va 挑选对应的第几项
+    if(*pte & PTE_V) {
+      pagetable = (pagetable_t)PTE2PA(*pte);
+    } else {
+      // 如果 alloc 没有被设置为 0，或者 kalloc 中没有富余的空间
+      // 我们就直接返回一个 0 
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+        return 0;
+      // 如果有空间，则把刚分配的页进行设置
+      memset(pagetable, 0, PGSIZE);
+      // 对该页所对应的 pte 进行写操作，便于以后遍历使用
+      *pte = PA2PTE(pagetable) | PTE_V;
+    }
+  }
+  // 返回了 level 0 所对应的 PTE 的地址
+  return &pagetable[PX(0, va)];
+}
+
+// Look up a virtual address, return the physical address,
+// or 0 if not mapped.
+// Can only be used to look up user pages.
+uint64
+walkaddr(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+
+  if(va >= MAXVA)
+    return 0;
+
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return 0;
+  if((*pte & PTE_V) == 0)
+    return 0;
+  // 特别注意这边，对于不包含 PTE_U 的 pte 项，自动返回 0
+  // 因此如果我们的 pte 是对内核打开的，我们不应该使用这个函数对地址进行遍历
+  if((*pte & PTE_U) == 0)
+    return 0;
+  pa = PTE2PA(*pte);
+  return pa;
+}
+
+// Remove npages of mappings starting from va. va must be
+// page-aligned. The mappings must exist.
+// Optionally free the physical memory.
+void
+uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+{
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvmunmap: not aligned");
+  // 从 va 开始来逐个页面地释放掉
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    // 可以直接找到 pte 所对应的物理地址
+    if((pte = walk(pagetable, a, 0)) == 0)
+      panic("uvmunmap: walk");
+    if((*pte & PTE_V) == 0)
+      panic("uvmunmap: not mapped");
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+    if(do_free){
+      uint64 pa = PTE2PA(*pte);
+      kfree((void*)pa);
+    }
+    // 内核地址空间，对 pte 所对应的物理地址的地方
+    // 进行写 0 的操作
+    // 如果有其他页表一并访问了 pte ，在之后观测也将是 0
+    *pte = 0;
+  }
+}
+```
+注意到一个现象，先前在`kernel_pagetable`中插入的用户所对应的页表还是需要人工手动去`free`掉的，否则会导致最后的`freewalk`没法较为彻底地清空掉映射的内存页。
+
+这听起来似乎是应该的？我们重新在`uvmfree`中加上去除掉映射的函数操作。
+
+一些其他遇到的问题：
+1. `CLINT`这个应该可以不做`maps`
+2. 在写`exec`的进程所对应的`kernel_pagetable`要稍微小心一点，`uvminit`函数只会被调用一遍，因此写代码要小心。
+3. 有一个问题，目前不知道怎么解决：
+```
+[exec] p->pid: 11
+[proc_pagetable]:
+[proc_kpgtblinit]:
+proc_kvmmap: va: 0x0000000010000000 pa: 0x0000000010000000
+test: -1
+panic: proc_kvmmap
+```
+在这边出现了`panic`的情况，似乎是`kalloc`没有富余空间了？结果看到似乎本身是`k_pgtable`这个地方没有被合适地分配到。
+
+不管怎么样，似乎说明所用的内存空间太多了，得查看`kalloc`和`kfree`的一些基本逻辑，或者说，研究一下是否有必要完全新开一个`old_kernelpagetable`。
+```
+[proc_kpgtblinit]:              
+[proc_pagetable]:                       
+p->pid: 1                              
+[uvminit]:                        
+[exec] p->pid:                  
+[proc_pagetable]              
+[proc_kpgtblinit]:                        
+[proc_freepagetable]:                   
+[uvmfree]:                  
+[uvmfree]: below PLIC                     
+[proc_freekpgtbl]:
+init: starting sh
+fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+[exec] p->pid: 2
+[proc_pagetable]:
+[proc_kpgtblinit]:
+[proc_freepagetable]:
+[uvmfree]:
+[uvmfree]: below PLIC
+[proc_freekpgtbl]:
+$ usertests                             
+fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+[exec] p->pid: 3
+[proc_pagetable]:
+[proc_kpgtblinit]:
+[proc_freepagetable]:
+[uvmfree]:
+[uvmfree]: below PLIC
+[proc_freekpgtbl]:
+usertests starting
+fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+[uvmdealloc]:
+[proc_freepagetable]:
+[uvmfree]:
+[uvmfree]: below PLIC
+[proc_freekpgtbl]:
+test execout: fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+[uvmdealloc]:
+[proc_freepagetable]:
+[uvmfree]:
+[uvmfree]: below PLIC
+[proc_freekpgtbl]:
+fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+[uvmdealloc]:
+[uvmdealloc]:
+[proc_freepagetable]:
+[uvmfree]:
+[uvmfree]: below PLIC
+[proc_freekpgtbl]:
+fork
+[proc_kpgtblinit]:
+[proc_pagetable]:
+[uvmcopy]:
+[uvmdealloc]:
+```
+感觉可能需要研究一下`uvmdealloc`和`uvmcopy`，感觉有可能是问题的触发点。
+
+我仔细看了一下，很好玩：第一个测试用例似乎就用尽了全部的内存空间，因此如果我们的程序没有好好写，比如又分配了一个内核页表，这样就会直接跑崩。所以我们需要想出一个不需要依赖新设置内核页表的方法。
+```C
+// test the exec() code that cleans up if it runs out
+// of memory. it's really a test that such a condition
+// doesn't cause a panic.
+void
+execout(char *s)
+{
+  for(int avail = 0; avail < 15; avail++){
+    int pid = fork();
+    if(pid < 0){
+      printf("fork failed\n");
+      exit(1);
+    } else if(pid == 0){
+      // allocate all of memory.
+      while(1){
+        uint64 a = (uint64) sbrk(4096);
+        if(a == 0xffffffffffffffffLL)
+          break;
+        *(char*)(a + 4096 - 1) = 1;
+      }
+
+      // free a few pages, in order to let exec() make some
+      // progress.
+      for(int i = 0; i < avail; i++)
+        sbrk(-4096);
+      
+      close(1);
+      char *args[] = { "echo", "x", 0 };
+      exec("echo", args);
+      exit(0);
+    } else {
+      wait((int*)0);
+    }
+  }
+
+  exit(0);
+}
+```
