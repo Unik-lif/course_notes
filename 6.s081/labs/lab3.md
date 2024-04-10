@@ -864,3 +864,74 @@ execout(char *s)
 我后来发现，原本的思路是有问题的，集中体现在：
 1. 基本做不到及时跟进，虽然尝试亦步亦趋来给`kern_pagetable`进行映射，但是在很多情况下没有办法做到这一点。比如因为内存使用率很大导致`exec`分配内存，映射到一半就进入了`bad`分支，`kern_pagetable`明明还有很多页并没有映射，那么当我们亦步亦趋来做的时候，我们如何确认到底有哪些页已经被映射了，哪些页没有被映射呢？这件事情真的超级复杂。
 2. 设计起来特别麻烦，我尝试修改其中的`bug`，发现问题越改越多，或许这说明本身我们的设计就是有一些问题的。
+
+
+`copyin`函数在什么时候用：被`wrapper`包起来，在`either_copyin`中进行使用，这个函数在`fetch_addr`之中会被调用。
+
+我们以看起来一个比较好的方式来进行重新代码撰写
+
+特别的，`sbrk`存在`shrink`的情况，需要考虑在此时释放掉多余的内存。
+```C
+      // free a few pages, in order to let exec() make some
+      // progress.
+      for(int i = 0; i < avail; i++)
+        sbrk(-4096);
+```
+看起来测例全部都能通过，不过存在有时候会阻塞的部分可能性，正在思考是否是实现上的问题。
+```
+test forktest: OK
+test bigdir: OK
+ALL TESTS PASSED
+```
+
+发现有一些边角料上的问题，尝试`debug`。
+
+调试了较长时间，重构了一次`kvmcopy`，似乎是终于完成了这个任务。对于内存的有限操作以及调试获得的经验确实收获不小。
+
+具体的思路是，首先就应该把`copyin`，`copyin_str`全部做替换，然后再开始我们的工作。
+
+需要撰写两个函数来进行工作：`kvmcopy`负责拷贝，`kvmfree`负责关闭掉多余的页映射
+```C
+int
+kvmcopy(pagetable_t pagetable, pagetable_t k_pagetable, uint64 start_va, uint64 end_va)
+{
+  // printf("[kvmcopy]: %p %p\n", start_va, end_va);
+  uint64 pa = 0;
+  int perm = 0;
+  pte_t* pte_u = 0;
+  pte_t* pte_k = 0;
+
+  for(int i = start_va; i < end_va; i += PGSIZE){
+    pte_u = walk(pagetable, i, 0);
+    pte_k = walk(k_pagetable, i, 1);
+    pa = PTE2PA(*pte_u);
+    perm = PTE_FLAGS(*pte_u);
+    
+    *pte_k = PA2PTE(pa) | (perm & (~PTE_U)) | PTE_V;
+  }
+  return 0;
+}
+
+void
+kvmfree(pagetable_t k_pagetable, uint64 start_va, uint64 end_va)
+{
+  // printf("[kvmfree]:%p %p\n", start_va, end_va);
+  if(walkaddr_kern(k_pagetable, start_va) == 0) return;
+  // printf("kvmfree here.\n");
+  if(end_va < PLIC)
+    uvmunmap(k_pagetable, start_va, (end_va - start_va)/PGSIZE, 0);
+  else
+    uvmunmap(k_pagetable, start_va, (PLIC - start_va)/PGSIZE, 0);
+}
+```
+需要修改的地方确实是在`exec`，`sbrk`，`fork`。当然对这些地方做修改确实不是那么一帆风顺，需要谨慎，并且这次的代码`usertests`非常强，足够排除掉很多很多写法。
+
+我踩过的坑有：
+1. 没有遵循奥卡姆剃刀法则，采用对`uvmalloc`等函数亦步亦趋修改的方案，结果程序越改越长，对于简单一些的测例似乎是能正常跑起来，但测例比较多的时候，尤其是遇到一些特殊情况，如`exec`中的`bad`，基本失去了可维护性。这说明代码的结构还是很重要的，如果一个方案并不是很合适的话，需要耐心重构。
+2. `exec`中的`bad`，似乎很容易在第一个测例中被触发，特殊情况需要考虑控制流是否是正确的。
+3. `kvmcopy`和`kvmfree`这两个函数的参数传递需要注意做到页对齐了，不然基本还是会寄了。
+4. 需要谨慎观察`sz`大小的变化，尤其是在`exec`函数之中，此外需要注意在`growproc`中注意空间是变大了还是变小了，对此来进行`kvmcopy`和`kvmfree`的选用。
+
+总之这个实验我感觉还是蛮有意思的，因为近期在做科研实在没有什么大片时间去做这个实验，而实验本身的连贯性和难度却又在我的预期之外，踩了很多坑后还是自己在不参考代码，参考过思路的情况下做出来了，不过参考了思路似乎不是什么好事，虽然MIT本身是有暗示这个做法，以及部分选用xv6使用的学校也在实验文档中明确指出了这个方法，但是成就感虽然挺高（毕竟调试这件事情还是不好做的），收获比较大，但不足以让我完全相信自己的能力。
+
+希望下次刷课是在没有干扰，并且有大片时间的情况下，不过我觉得可能这样的机会会很少。。就这样吧，这个实验真的有意思。
