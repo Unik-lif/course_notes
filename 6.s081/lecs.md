@@ -96,6 +96,20 @@ so callee register during the calling process should restore the prior values, w
 
 using gdb command like `bt` and `frame n` and i `frame`, we can get the info of the stack frame.
 ## Lec5: Traps
+### Preclass
+Calling Convention:
+- riscv a0-a7 eight integer registers for calling convention passes arguments in registers when possible. fa0-fa7
+- 不同的数据结构在传输时会根据pointer-size来进行对齐，最多可以直接传两个pointer-size长度的参数，更长的则需要通过地址引用来做。
+- 函数返回值则通过`a0`和`a1`两个寄存器，更大的返回值会整个在内存中进行传输。
+```
+Larger return values are passed entirely
+in memory; the caller allocates this memory region and passes a pointer to it as an implicit first
+parameter to the callee
+```
+- riscv中的栈是十六字节对齐的，需要注意
+- riscv中的temporary寄存器为s0-s11，他们需要在函数调用的前后维持同样的值，所以在进入函数之后适时需要做压栈。
+- 但是t0-t6可以随便用，这个东西由caller来进行管理
+### Class
 What you can do in Supervisor mode but not can do in User mode is not so much.
 
 for example, supervisor mode is still restricted to the page table where `satp` register sets.
