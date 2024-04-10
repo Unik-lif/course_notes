@@ -117,3 +117,15 @@ for example, supervisor mode is still restricted to the page table where `satp` 
 some gdb skills:
 1. `ctrl a + c` to enter qemu console.
 2. `info mem` to see memory page table in qemu.
+3. `i frame`
+4. `p *argv@2`：展示数组的两个元素
+5. `i locals`
+caller registers => Not perserved across fn call (can be overwritten)
+
+callee registers => preserved across fn call (can't be overwritten, should be saved)
+
+a0, a1 <= return a long long value.
+
+The stack frame of RISCV is nearly the same as x86-64, at least in my point of view I don't consider them different.
+
+## Lec6: 
