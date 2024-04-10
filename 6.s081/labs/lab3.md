@@ -935,3 +935,32 @@ kvmfree(pagetable_t k_pagetable, uint64 start_va, uint64 end_va)
 总之这个实验我感觉还是蛮有意思的，因为近期在做科研实在没有什么大片时间去做这个实验，而实验本身的连贯性和难度却又在我的预期之外，踩了很多坑后还是自己在不参考代码，参考过思路的情况下做出来了，不过参考了思路似乎不是什么好事，虽然MIT本身是有暗示这个做法，以及部分选用xv6使用的学校也在实验文档中明确指出了这个方法，但是成就感虽然挺高（毕竟调试这件事情还是不好做的），收获比较大，但不足以让我完全相信自己的能力。
 
 希望下次刷课是在没有干扰，并且有大片时间的情况下，不过我觉得可能这样的机会会很少。。就这样吧，这个实验真的有意思。
+
+最后附上通关图：
+```shell
+== Test pte printout == 
+$ make qemu-gdb
+pte printout: OK (3.2s) 
+== Test answers-pgtbl.txt == answers-pgtbl.txt: OK 
+== Test count copyin == 
+$ make qemu-gdb
+count copyin: OK (1.0s) 
+== Test usertests == 
+$ make qemu-gdb
+(148.5s) 
+== Test   usertests: copyin == 
+  usertests: copyin: OK 
+== Test   usertests: copyinstr1 == 
+  usertests: copyinstr1: OK 
+== Test   usertests: copyinstr2 == 
+  usertests: copyinstr2: OK 
+== Test   usertests: copyinstr3 == 
+  usertests: copyinstr3: OK 
+== Test   usertests: sbrkmuch == 
+  usertests: sbrkmuch: OK 
+== Test   usertests: all tests == 
+  usertests: all tests: OK 
+== Test time == 
+time: OK 
+Score: 66/66
+```
