@@ -95,7 +95,7 @@ so callee register during the calling process should restore the prior values, w
 这个过程似乎是由硬件来实现的，啊，真的好好奇，希望自己动手做一遍。
 
 using gdb command like `bt` and `frame n` and i `frame`, we can get the info of the stack frame.
-## Lec5: Traps
+## Lec5:
 ### Preclass
 Calling Convention:
 - riscv a0-a7 eight integer registers for calling convention passes arguments in registers when possible. fa0-fa7
@@ -114,7 +114,7 @@ What you can do in Supervisor mode but not can do in User mode is not so much.
 
 for example, supervisor mode is still restricted to the page table where `satp` register sets.
 
-some gdb skills:
+some gdb-qemu skills:
 1. `ctrl a + c` to enter qemu console.
 2. `info mem` to see memory page table in qemu.
 3. `i frame`
@@ -128,4 +128,25 @@ a0, a1 <= return a long long value.
 
 The stack frame of RISCV is nearly the same as x86-64, at least in my point of view I don't consider them different.
 
-## Lec6: 
+## Lec6: Traps
+
+```
+SH
+       write()
+       ecall  <------------------------>
+---------------------------            |
+       uservec       trampoline     userset()
+              |                        |
+           usertrap               usertrapret() 
+              |                        |
+            syscall ------------------>
+              ^  >
+              |  |
+            sys_write
+```
+xv6在系统调用的时候，会在用户地址空间和内核地质孔建的trampoline中的trampframe之中对相关寄存器进行存储。
+
+嗯，理论上我们NestedSGX的trampoline也应该留有一个页干这个事情，不过我似乎已经规避了这个风险。。我们似乎没有按照正统的方式来做，而是用了相对hacky的方式来实现这个事情。
+
+### 课后作业：
+自己过一遍课上讲的系统调用干的全流程，请用gdb调试，不要自己硬看。
