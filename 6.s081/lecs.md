@@ -150,3 +150,13 @@ xv6在系统调用的时候，会在用户地址空间和内核地质孔建的tr
 
 ### 课后作业：
 自己过一遍课上讲的系统调用干的全流程，请用gdb调试，不要自己硬看。
+
+1. 为什么这些应用程序可以找到系统调用位置？`usys.S`是怎么连接上的？
+- 对照Makefile阅读，当然你可以加上-nB选项，会非常清晰。
+- riscv64-unknown-elf-ld -z max-page-size=4096 -N -e main -Ttext 0 -o user/_stats user/stats.o user/ulib.o user/usys.o user/printf.o user/umalloc.o user/statistics.o
+- 可以看到在链接的是后把usys.o都静态链接进去了，因此系统调用是可以找到调用入口的
+
+2. 为什么在`stepi`中调用`ecall`时没法跟踪到内核？
+- 确实这个现象比较奇怪，不过`stackoverflow`上有人也提了一下这个问题。
+- https://stackoverflow.com/questions/60795578/cannot-access-kernel-space-when-debugging-xv6-with-qemu-and-gdb，我们最好自己编译一遍工具链，感觉可能是早期riscv与ubuntu20.04绑定的工具链包还不够稳定的问题。
+- 不过这个似乎还挺考验网速的，正好我要去一趟玉泉路。
