@@ -160,6 +160,49 @@ xv6在系统调用的时候，会在用户地址空间和内核地质孔建的tr
 - 确实这个现象比较奇怪，不过`stackoverflow`上有人也提了一下这个问题。
 - https://stackoverflow.com/questions/60795578/cannot-access-kernel-space-when-debugging-xv6-with-qemu-and-gdb，我们最好自己编译一遍工具链，感觉可能是早期riscv与ubuntu20.04绑定的工具链包还不够稳定的问题。
 - 不过这个似乎还挺考验网速的，正好我要去一趟玉泉路。
-- 在我们的服务器上配置好了这个xv6的环境，现在用起来会很舒服。
+- 在我们的服务器上配置好了这个xv6的环境，不过服务器自己用的qemu肯定不是现在这个，需要仔细一点配，并且修改一下使用的路径，现在用起来会很舒服。
 
 看完了第四章。
+## Lec7: Page Faults
+
+Plan: implement VM => features using page faults.
+
+more in design level, less in code level.
+
+Virtual memory benefits
+1. Isolation
+2. Level of indirection: va -> pa.
+- using page faults, we can dynamically change the mappings in VM. => great flexibility.
+
+Info needed:
+1. the faulting va. <= stval register
+2. the type of page fault. a number of causes involved. <= scause register
+3. the va of instruction that caused the fault. <= sepc register. trapframe->epc
+
+allocation type:
+1. sbrk => so long as the application asks how many space, we simply allocates the space. (eager allocation)
+- 这个方式是 xv6 源代码本来的写法
+2. pagefault => demanding page. p->sz, p->sz+n. 直到出现了 PF ，我们才尝试去做页表映射这件事
+- 这个方式是我们未来希望做修改最终希望看到的写法
+
+#PF 的标准处理流程：
+1. 再分配一个页
+2. 对于这个页做清空
+3. 映射这个页
+4. 重新开始运行先前的指令
+
+在演示视屏中出现的 uvmmap: panic 似乎源自 unmap 从较低的地址到较高地址的连续释放，虽然 pagefault 能够 mmap 掉一部分，但是不代表所有的内存都是这样，有部分内存那确实是 lazy-allocation ，并没有真正地被分配内存。
+
+### 延伸：copy-on-write 和 demanding pageing
+一样是在 pagefault 发生的时候，即权限不对劲。
+- COW： 于是把原本的东西拷贝一部分，然后再附上我们新的权限，再对东西做修改。
+- DP： 从磁盘中读取出来
+
+memory-mapped files
+- mmap -> 直接在内存上改
+- unmap -> 需要把东西从内存读回到文件之中
+- file will be one of the vma.
+
+page tables      ->  great VM features.
+
+traps/page fault ->
