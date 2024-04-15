@@ -160,3 +160,6 @@ xv6在系统调用的时候，会在用户地址空间和内核地质孔建的tr
 - 确实这个现象比较奇怪，不过`stackoverflow`上有人也提了一下这个问题。
 - https://stackoverflow.com/questions/60795578/cannot-access-kernel-space-when-debugging-xv6-with-qemu-and-gdb，我们最好自己编译一遍工具链，感觉可能是早期riscv与ubuntu20.04绑定的工具链包还不够稳定的问题。
 - 不过这个似乎还挺考验网速的，正好我要去一趟玉泉路。
+- 在我们的服务器上配置好了这个xv6的环境，现在用起来会很舒服。
+
+看完了第四章。
