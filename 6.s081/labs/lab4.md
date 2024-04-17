@@ -699,6 +699,50 @@ void main(void) {
   34:	5e6080e7          	jalr	1510(ra) # 616 <printf>
   exit(0);
   38:	4501                	li	a0,0
-  3a:	00000097          	auipc	ra,0x0
+  3a:	00000097          	auipc	ra,0x0 # ra is set to 3e + 2ae = 2
   3e:	274080e7          	jalr	628(ra) # 2ae <exit>
 ```
+`auipc`指令：将`0x0 << 12`，`pc`的值被记录到`ra`寄存器上。
+```
+The AUIPC instruction, which adds a 20-bit upper immediate to the PC, replaces the RDNPC
+instruction, which only read the current PC value. This results in significant savings for
+position-independent code.
+
+The indirect jump instruction JALR (jump and link register) uses the I-type encoding. The target
+address is obtained by adding the sign-extended 12-bit I-immediate to the register rs1, then setting
+the least-significant bit of the result to zero. The address of the instruction following the jump
+(pc+4) is written to register rd. Register x0 can be used as the destination if the result is not
+required.
+```
+`JALR`指令则会使用，其中的 offset ，与 ra 寄存器中的值进行相加，从而得到最终的跳转地址。不过面对 riscv 的高级工具链优化选项，其实这边的值并没有什么太大意义，你只要知道他们拼凑起来是一个 call 就行了，这边似乎是riscv 工具链的一些特殊的东东，更多的可以参考这个：
+
+https://stackoverflow.com/questions/43956612/understanding-the-auipcjalr-sequence-used-for-function-calls
+
+不过这边是调用 printf 时的一些设置，如果只看 f 函数和 g 函数的调用情况，在 a1 寄存器似乎已经计算好了这个值，编译器做了较多的优化，之后直接打印出来就完事了。
+
+3. At what address is the function printf located?
+-  printf 地址似乎还是挺显然的，位于 0x616 这个位置，具体可以在 call.asm 上直接找到
+
+4. What value is in the register ra just after the jalr to printf in main?
+- 直接参考手册， ra 的值是 pc + 4 ，因此是下一条指令的位置，也就是 `li a0, 0` 这一行
+
+5. Run the following code.
+
+	unsigned int i = 0x00646c72;
+	printf("H%x Wo%s", 57616, &i);
+      
+What is the output? Here's an ASCII table that maps bytes to characters.
+- He110 World
+
+The output depends on that fact that the RISC-V is little-endian. If the RISC-V were instead big-endian what would you set i to in order to yield the same output? Would you need to change 57616 to a different value?
+- I would set i to 0x726c6400 instead.
+- I would not need to change 57616 to a different value, cause %x will adjust it well. but %s will always print from lowest address to highest address.
+
+Here's a description of little- and big-endian and a more whimsical description.
+
+6. In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+
+	printf("x=%d y=%d", 3);
+
+- 看起来各种值都有，printf 如果要打印， printf 自己是不知道之后的参数的，我们可以考虑在 gdb 下调试一下。
+- 看起来确实不知道，可能还是会对 rdi 寄存器进行操作，从而出现了一些内存上的泄露，虽然不知道有什么利用方式。在 std99 中提到这事一种 undefined behavior ，在编程过程中是需要避免的那种。
