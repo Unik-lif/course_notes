@@ -746,3 +746,26 @@ Here's a description of little- and big-endian and a more whimsical description.
 
 - 看起来各种值都有，printf 如果要打印， printf 自己是不知道之后的参数的，我们可以考虑在 gdb 下调试一下。
 - 看起来确实不知道，可能还是会对 rdi 寄存器进行操作，从而出现了一些内存上的泄露，虽然不知道有什么利用方式。在 std99 中提到这事一种 undefined behavior ，在编程过程中是需要避免的那种。
+
+### Backtrace
+这边提到的细节：
+
+The GCC compiler stores the frame pointer of the currently executing function in the register s0. Add the following function to kernel/riscv.h:
+```C
+static inline uint64
+r_fp()
+{
+  uint64 x;
+  asm volatile("mv %0, s0" : "=r" (x) );
+  return x;
+}
+```
+and call this function in backtrace to read the current frame pointer. This function uses in-line assembly to read s0.
+
+实际上可能和 GCC 无关，这是 RISCV 的 ABI 所规定的东西，即 s0 寄存器和 fp 寄存器是等价的。
+
+要做这件事情似乎不难， fp 是当前这个栈的顶部，我们需要做的事情是，先根据 fp 找到当前栈的顶部，然后 -8 找到 return address ,把这个东西打印出来，从而得知上一个函数是在哪一步对我们当前的函数进行了调用。
+
+随后，利用 fp - 16 找到 prev fp ，从而确定上一个函数的栈的顶部，我们同样采用 -8 找 return address ，同样采用 -16 来找 prev fp。
+
+这件事情什么时候结束呢？
