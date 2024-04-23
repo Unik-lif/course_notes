@@ -768,4 +768,49 @@ and call this function in backtrace to read the current frame pointer. This func
 
 随后，利用 fp - 16 找到 prev fp ，从而确定上一个函数的栈的顶部，我们同样采用 -8 找 return address ，同样采用 -16 来找 prev fp。
 
-这件事情什么时候结束呢？
+这件事情什么时候结束呢？我们看到 kstack 的设置，
+```C
+p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
+
+// proc.h 中对于 kernel_sp 的设置
+  /*   8 */ uint64 kernel_sp;     // top of process's kernel stack
+```
+因此，我们可以直接计算到 top 为 kernel_sp 的时候，那么我们的函数就遍历完了。此外，其实在向里头遍历的时候，栈的地址会越来越小，这个和我们平常用的情况会有一些不一样。
+
+判断一下 PGDOWN(fp) == p->kstack 应该就好了。这说明我们的栈已经缩到最小了。
+
+### Alarm
+1. 跟着提示做，感觉没有什么难度。
+2. 第二个稍微难一些，需要恢复一下上下文。
+
+搞清楚控制流，从 kernelvec 位置进入。
+
+所以我们要保存的信息应该是在 usertrap 发生，即 timerinterrupt 发生之前的用户程序的状态，然后最后希望 sigreturn 能够恢复到的状态可能是那个保存的状态，因此会与我们正常情况系统。
+
+uservec 这边过来，然后就可以跑到 usertrap 
+
+Prevent re-entrant calls to the handler----if a handler hasn't returned yet, the kernel shouldn't call it again. test2 tests this.
+
+在这边会对 p->trapframe->a0 的值做修改，因此系统调用的返回值不能乱写，尤其是 sigreturn ，不过似乎对于通过测试没有影响。
+```C
+void
+syscall(void)
+{
+  int num;
+  struct proc *p = myproc();
+
+  num = p->trapframe->a7;
+  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    p->trapframe->a0 = syscalls[num]();
+  } else {
+    printf("%d %s: unknown sys call %d\n",
+            p->pid, p->name, num);
+    p->trapframe->a0 = -1;
+  }
+}
+```
+我找到了自己的问题所在，原来非常简单，是我在 sigalarm 函数中对于参数的解析出了错误， argaddr 应该对于 1 号参数解析，不知道为什么笔误写成了 0.
+
+我们之后把东西写成了 kalloc 分配的方式，这个听起来也是比较合理的。
+
+到这边， traps 实验便完成了。
