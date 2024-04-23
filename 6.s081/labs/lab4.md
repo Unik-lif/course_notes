@@ -814,3 +814,26 @@ syscall(void)
 我们之后把东西写成了 kalloc 分配的方式，这个听起来也是比较合理的。
 
 到这边， traps 实验便完成了。
+
+用时大概六个小时，因为眼睛不够尖粗心设置了参数我们多花了一些时间，我们记录一下实验结果：
+```
+== Test answers-traps.txt == answers-traps.txt: OK 
+== Test backtrace test == 
+$ make qemu-gdb
+backtrace test: OK (3.1s) 
+== Test running alarmtest == 
+$ make qemu-gdb
+(3.4s) 
+== Test   alarmtest: test0 == 
+  alarmtest: test0: OK 
+== Test   alarmtest: test1 == 
+  alarmtest: test1: OK 
+== Test   alarmtest: test2 == 
+  alarmtest: test2: OK 
+== Test usertests == 
+$ make qemu-gdb
+usertests: OK (263.5s)          
+== Test time == 
+time: OK 
+Score: 85/85
+```

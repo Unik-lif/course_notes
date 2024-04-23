@@ -203,6 +203,23 @@ memory-mapped files
 - unmap -> 需要把东西从内存读回到文件之中
 - file will be one of the vma.
 
-page tables      ->  great VM features.
-
+page tables      ->  
+                            great VM features.
 traps/page fault ->
+
+## Lec9: Interrupts.
+Basic idea: 
+- the HW wants attention now.
+- the SW save its work => process interrupts => resume its work.
+
+Same mechanism with syscall + traps.
+
+only slightly different, the differences are:
+1. asynchronous.
+2. concurrency
+3. programmable devices
+
+Where do interrupts come from?
+- PLIC: platform level interrupt controllers.
+
+Driver manages device.
