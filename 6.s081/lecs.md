@@ -223,3 +223,23 @@ Where do interrupts come from?
 - PLIC: platform level interrupt controllers.
 
 Driver manages device.
+
+Programming device. => memory mapped i/o => use load/store instruction onto control register of the device.
+
+Tips:
+- read the manual carefully.
+- follow the protocol.
+
+### Case Study.
+How can we print into the console?
+- device puts char into uart, uart generates interrupts when the char has been sent.
+- keyboard receive the line and generates the interrupts to tell the processor that here's a char capable on the keyboard.
+
+RISCV supports for interrupts:
+- SIE: one bit for External/Software/Timer interrupts.
+- SSTATUS: bit to enable/disable interrupt
+- SIP: interrupt pending
+- SCAUSE:
+- STVEC
+
+我发现似乎有点跟不上老师的节奏了，或许我应该自己先调研一下相关的代码。
