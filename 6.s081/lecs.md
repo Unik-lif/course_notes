@@ -243,3 +243,114 @@ RISCV supports for interrupts:
 - STVEC
 
 我发现似乎有点跟不上老师的节奏了，或许我应该自己先调研一下相关的代码。
+
+一些方法论上的东西：
+- 首先对于驱动，要对其做初始化，比如 UART 串口需要开启其对于字符串读取的功能
+- 其次，使用 PLIC 来管理各个 CPU 核对于中断的敏感度，使得各个 CPU 有能力对部分特殊异常产生兴趣，到这里就实现了驱动以及外设对于中断的外部准备
+- 最后，设置 CPU 的 SSTATUS 寄存器，使得 CPU 真正地能运转起中断来
+
+Producer / consumer
+
+Interrupt evolution:
+- interrupt used to be fast, hardware that time is simple.
+- now interrupt is slow, many steps should be done if a interrupt is happend. Since device is more complicated now.
+- 考虑一种高速网卡的情况，如果持续处理， CPU 甚至会跟不上中断处理的速度。
+
+Solution to fast devices interrupts: polling. 轮询
+- cpu keeps reading RHR register. CPU spins. Not dependent on the interrupts.
+
+对于部分高级一些的网卡驱动，可能还会动态在轮询和终端之中进行切换。
+
+## Lec 10: Multiprocessors and locks.
+app wants to use multiple cores. Kernel must have abilities to handle parallel syscalls.
+
+We need locks for correct sharing. Locks can limit performance.
+
+Why locks? Avoid races conditions.
+
+Lock Abstraction:
+```C
+qcquire(&l)
+// critical section
+release(&l)
+
+ struct lock {
+
+}
+```
+如果程序有多个锁，那么我们的平行化也会因此做的更加好。
+
+当然有部分大程序可能是 lock-free 的，它们会更加复杂，但是性能自然也会更加好。
+
+对每个对象自动加锁（单位锁）不见得是一个好事情，可能还会有一些原子性没做好的地方。然而，如果对于我们所需要的全部资源都加锁，反而会有更大开销以及比较差的并行性能。
+
+lock perspectives:
+- locks help avoid lost updates.
+- locks make multi-step operations atomic.
+- locks helps maintain invariant.
+
+Deadlock: deadlock embrace. 
+
+one solution: order that locks. full operations have to acquire locks in that order.
+
+### Lock vs modularity
+lock ordering must be global => should be aware of other locks.
+
+but it kinda break the abstraction that m2 shouldn't leak lock info to m1.
+
+### Lock vs performance
+need to split up data structures to get bet better performance.
+
+Best split is a challenge. may have to rewrite the code if you want to split up.
+
+general receipes:
+- start with coarse-grained locks
+- measure whether a contention that appears one of these locks.
+
+### Hardware assisted.
+in Riscv -> amoswap: atomic memory operation swap.
+
+
+amoswap addr, r1, r2
+```
+lock addr
+tmp <- *addr
+*addr <- r1
+r2 <- tmp
+unlock
+```
+r2 can be the return value in fact... if we set r2 to a0.
+
+afterwards, *addr will be written to r2, r1 will be written to addr, this is a very good example to show `test_and_set` case.
+
+It is actually dependent on how the memory system actually works.
+
+lock的作用：
+- 单 CPU 因中断等其余行为出现的同步问题
+- 多 CPU （多线程） 同步问题
+
+### Memory ordering
+假设我们先设置 locked 为 1, 再设置 x = x + 1 ,再解锁。在程序顺序时，也就是说如果我们只有一个串行执行的环境下，即便代码顺序乱了，我们一样可以允许 CPU 和编译器对代码进行优化，以获得更好的性能。
+
+但是在多个核的情况下，可能给优化乱掉，如何避免这个优化问题？一些基本的原语：
+- sync_synchronize: act as memory fence.
+
+本质上达到的效果如下：
+
+```python
+inst1..n
+fence # fence1
+inst2n..3n
+fence # fence2
+instn..2n
+```
+inst1..n 不会因为优化越过 fence1 在 fence1 之后执行，inst2n..3n 不会越过 fence1 和 fence2 在区域以外执行， instn..2n 不会在 fence2 以前执行。
+
+总结：
+- 锁对于多核来说是个保证程序正确性的好东西，但是会降低性能
+- 锁会把程序复杂化
+- 在不需要共享的情况下不要做共享以及加锁处理
+- 需要用锁的时候，先从粗粒度做起，再尝试把粒度精细化
+- 多使用 race detecter
+
+特别的， sync 指令不仅对硬件有效，对于编译器一样有效。所以 sync 是个好东西。
