@@ -356,3 +356,42 @@ inst1..n 不会因为优化越过 fence1 在 fence1 之后执行，inst2n..3n �
 特别的， sync 指令不仅对硬件有效，对于编译器一样有效。所以 sync 是个好东西。
 
 riscv 特权级手册对于内存模型有一个很详细的讨论，也会讨论编译器的行为，值得去看一下这一章。
+## Lec 10:
+Thread - one serial execution. only use one CPU.
+
+Thread has pc, regs, stack.
+
+Interleave threads:
+- have multiple cpus
+- switch system.
+
+Shared memory?
+- xv6 kernel threads do share memory.
+- xv6 user processes: no shared memory among these threads, they have their individual space.
+- linux users -> allow shared memory
+
+Thread Challenges
+- switching - interleave => scheduling, how to pick next thread.
+- what to save / restore.
+- compute - bound how to handle.
+
+Timer interrupts -> kernel handler -> yields - switch.
+
+Preemptive sched
+
+"state" of threads:
+- running
+- runnable <=== PC, registers.
+- sleeping
+
+xv6的线程切换：
+- 一个用户进程先跳入到内核之中，保存用户线程的状态 context ，并且运行用户进程的内核线程，把自己挂起
+- 切换到另外一个进程的内核线程，然后这个新的进程再切换到自己的用户线程来跑
+- 最终的效果是从一个用户进程切换到另外一个用户进程
+
+更加精细一些：实际上 ctx 的切换是切换到 scheduler 的 ctx ，之后再由 scheduler 切换 ctx 到另外一个用户进程的 ctx 之中。每个 scheduler 实际上有一个单独的栈。
+
+对于 xv6 来说，每个进程一共有两个线程，一个是用户线程，一个是内核线程，当然他们王不见王。
+
+Switch为什么没有保存全部的状态？
+- 它本质上是一个 C 函数，我们只需要保存好 callee 寄存器的值就好了
