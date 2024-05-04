@@ -457,3 +457,140 @@ uartputc_sync(int c)
   pop_off();
 }
 ```
+我们再看到 write ，其实也是如出一辙的，我们看一下：
+```C
+//
+// user write()s to the console go here.
+//
+int
+consolewrite(int user_src, uint64 src, int n)
+{
+  int i;
+
+  acquire(&cons.lock);
+  for(i = 0; i < n; i++){
+    char c;
+    // 从 user_src 中写入到 c 中， user_src 是在 consoleread 时读进来的
+    if(either_copyin(&c, user_src, src+i, 1) == -1)
+      break;
+    uartputc(c);
+  }
+  release(&cons.lock);
+
+  return i;
+}
+```
+继续观察函数 uartputc ,如下所示：
+```C
+// add a character to the output buffer and tell the
+// UART to start sending if it isn't already.
+// blocks if the output buffer is full.
+// because it may block, it can't be called
+// from interrupts; it's only suitable for use
+// by write().
+void
+uartputc(int c)
+{
+  acquire(&uart_tx_lock);
+
+  if(panicked){
+    for(;;)
+      ;
+  }
+
+  while(1){
+    if(((uart_tx_w + 1) % UART_TX_BUF_SIZE) == uart_tx_r){
+      // buffer is full.
+      // wait for uartstart() to open up space in the buffer.
+      sleep(&uart_tx_r, &uart_tx_lock);
+    } else {
+      uart_tx_buf[uart_tx_w] = c;
+      uart_tx_w = (uart_tx_w + 1) % UART_TX_BUF_SIZE;
+      uartstart();
+      release(&uart_tx_lock);
+      return;
+    }
+  }
+}
+
+// if the UART is idle, and a character is waiting
+// in the transmit buffer, send it.
+// caller must hold uart_tx_lock.
+// called from both the top- and bottom-half.
+void
+uartstart()
+{
+  while(1){
+    if(uart_tx_w == uart_tx_r){
+      // transmit buffer is empty.
+      return;
+    }
+    
+    // can't load the new character in this case.
+    if((ReadReg(LSR) & LSR_TX_IDLE) == 0){
+      // the UART transmit holding register is full,
+      // so we cannot give it another byte.
+      // it will interrupt when it's ready for a new byte.
+      return;
+    }
+    
+    int c = uart_tx_buf[uart_tx_r];
+    uart_tx_r = (uart_tx_r + 1) % UART_TX_BUF_SIZE;
+    
+    // maybe uartputc() is waiting for space in the buffer.
+    wakeup(&uart_tx_r);
+    
+    WriteReg(THR, c);
+  }
+}
+```
+## 部分流程梳理：
+当 `$ ` 被发送的时候，相关的流程大致如下所示：自然我们可以直接跑到 consolewrite 这边跑我们的程序，然后呢在 THR 寄存器的操作中，将我们需要传输的字符写入到这个寄存器中。
+
+之后便是硬件上面的事情，硬件通过 BAUD Rate ，由于先前设置了 Transmit bit ，即在 THR 中有值的时候会自动传输，所以其实这个时候只要写了 THR 寄存器，这个信息就会被发送出去。
+
+ UART 保证在发送这个信息的同时，触发一个中断。由于字符是一个一个传输的，` ` 字符也会走完前面 `$` 的完整流程，不过它大概会卡在这个步骤：
+
+感觉会有两种可能性，一种是中断触发的时候下一次 consolewrite 已经 acquire 了 uart_tx_lock ，uartintr 中的 uartstart 却没有看到更新 uart_tx_w ，那么这个中断什么也没做就会返回，之后 ` ` 的传输过程就与 `$` 完全一致。
+```C
+// add a character to the output buffer and tell the
+// UART to start sending if it isn't already.
+// blocks if the output buffer is full.
+// because it may block, it can't be called
+// from interrupts; it's only suitable for use
+// by write().
+void
+uartputc(int c)
+{
+  acquire(&uart_tx_lock);
+
+  if(panicked){
+    for(;;)
+      ;
+  }
+
+  while(1){
+    if(((uart_tx_w + 1) % UART_TX_BUF_SIZE) == uart_tx_r){
+      // buffer is full.
+      // wait for uartstart() to open up space in the buffer.
+      sleep(&uart_tx_r, &uart_tx_lock);
+    } else {
+      uart_tx_buf[uart_tx_w] = c;
+      uart_tx_w = (uart_tx_w + 1) % UART_TX_BUF_SIZE;
+      uartstart();
+      release(&uart_tx_lock);
+      return;
+    }
+  }
+}
+```
+我尝试用 gdb 跟了一下，看到的结果其实是交替，也就是其实我们依赖 uartputc 来更新 uart_tx_buf ， uartputc 函数中的 uartstart 也会被调用，并不是如同我们在 book 中所看到的那样：typically the first byte will be sent by uartputc’s call to uartstart, and the remaining buffered bytes will be sent by uartstart calls from uartintr as transmit complete interrupts arrive.
+
+不知道未来的版本是否对此有所勘误，不过无所谓，现在对于一开始的 input 流程我已经非常熟练了。
+
+
+## 其他
+出于篇幅，我们不再对上面的代码做整理和解释了，如果想要把脉络做理解，其实也不难：
+1. 思考 shell 一开始打印的 $ 字符所生成的全流程 =》 不涉及中断的触发，只是使用了 consolewrite 函数打印相应字符到 stdout 上
+2. 思考我们输入 ls 之后的全流程 =》 中断的触发
+
