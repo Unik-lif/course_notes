@@ -12,7 +12,7 @@
 似乎已经足够可以开始写我们的代码了。
 
 ## 实验步骤
-我们依照实现的建议顺序来做，先尝试通过 cowtest 。
+我们依照实现的建议顺序来做，先尝试通过 cowtest 。我们不讲实验的细节，关键讲一下自己在写实验时，遇到的一些（很多）坑点。
 
 一开始这个页呢还是正常的，直到我们检测到了 uvmcopy 的运行，这时候我们才要对原本的页的性质做一些修改。需要加上 PTE_COW 标志，并且去掉 PTE_W 标志
 
@@ -21,44 +21,76 @@ copyout 为什么需要做修改？
 
 freeproc 也需要做一些修改，否则就直接把 cow ，但是还没有自行复制一份的内存页全部给释放了。为此，我们需要修改一下 kinit 这边的系统。
 
-异常：
-不知道为什么父亲进程也给我弄成 zombie 了，应该需要想办法解决这件事情。
+## 异常：
+### 不知道为什么父亲进程也给我弄成 zombie 了，应该需要想办法解决这件事情。
+我们想要达成的小目标是，至少跑 `echo hi` 不会卡死，然而似乎并不容易。
 
-卡机原因：写代码的时候要小心，不要把 trampoline 一并给 free 掉了。
+仔细打表发现最后卡在了莫名其妙的地方， gdb 上卡住的指令似乎是 `addi sp, sp(0)` ，对应 `010101` 这样的内存信息，经过检查发现是没有把 `kfree` 改好，一定要把 `memset` 放到内存释放里头来做，不然会覆写掉我们的指令位置，因为有一部分 `kfree` 并不会真的 `free` 掉内存。
+
+### cowtest
 ```
- .. ..511: pte 0x0000000021fd5001 pa 0x0000000087f54000                                                                                                                                                           .. .. ..510: pte 0x0000000021fd5cc7 pa 0x0000000087f57000                                                                                                                                                        .. .. ..511: pte 0x0000000020001c4b pa 0x0000000080007000                                                                                                                                                       freed memory: 0x0000000087f50000                                                                                                                                                                                 freed memory: 0x0000000087f51000                                                                                                                                                                                 freed memory: 0x0000000087f4f000                                                                                                                                                                                 freed memory: 0x0000000087f4e000                                                                                                                                                                                 freed memory: 0x0000000087f4d000                                                                                                                                                                                 freed memory: 0x0000000087f4c000                                                                                                                                                                                 freed memory: 0x0000000087f4b000                                                                                                                                                                                 freed memory: 0x0000000087f4a000                                                                                                                                                                                 freed memory: 0x0000000087f49000                                                                                                                                                                                 freed memory: 0x0000000087f48000                                                                                                                                                                                 freed memory: 0x0000000087f47000                                                                                                                                                                                 freed memory: 0x0000000087f46000
-freed memory: 0x0000000087f45000
-freed memory: 0x0000000087f44000
-freed memory: 0x0000000087f43000
-freed memory: 0x0000000087f42000
-freed memory: 0x0000000087f41000
-freed memory: 0x0000000087f40000
-hi
-p->pid: 3 p->name: echo
-freed memory: 0x0000000087f57000
+$ cowtest
+simple: ok
+simple: ok
+three: ok
+three: ok
+three:
 ```
-我们在函数 freeproc 中找到了可能的原因：
+到实验结点这个位置，我们其实还没有对 `copyout` 做修改，我们先修改一下对应的测试脚本 `cowtest`。对应 `gdb` 是卡在这个位置：
+```
+0x0000003ffffff000 in ?? ()
+=> 0x0000003ffffff000:  14051573                csrrw   a0,sscratch,a0
+```
+发现是内存分配完了，`killed`就好，于是过了 `three`，卡在了后面的 `file`：需要修改 `copyout`.
+```
+$ cowtest
+simple: ok
+simple: ok
+three: ok
+three: ok
+three: ok
+file: error: read failed
+error: read failed
+error: read failed
+```
+修改 `copyout` 时要注意，首先我们需要拷贝完原来的物理内存信息，然后再做后续的修改处理：
 ```C
-// free a proc structure and the data hanging from it,
-// including user pages.
-// p->lock must be held.
-static void
-freeproc(struct proc *p)
-{
-  printf("p->pid: %d p->name: %s p->trapframe: %p\n", p->pid, p->name, p->trapframe);
-  if(p->trapframe)
-    kfree((void*)p->trapframe);
-  p->trapframe = 0;
-  if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
-  p->pagetable = 0;
-  p->sz = 0;
-  p->pid = 0;
-  p->parent = 0;
-  p->name[0] = 0;
-  p->chan = 0;
-  p->killed = 0;
-  p->xstate = 0;
-  p->state = UNUSED;
-}
+  if(flags & PTE_COW && !(flags & PTE_W)){
+    mem = kalloc();
+    if(mem){
+      uvmunmap(pagetable, va0, 1, 0);
+      memmove(mem, pa0, PGSIZE);
+      memmove((void *)(mem + (dstva - va0)), src, n);
+      mappages(pagetable, va0, PGSIZE, mem, flags | PTE_W);
+    }
+  } else {
+    memmove((void *)(pa0 + (dstva - va0)), src, n);
+  }
 ```
+到这一步 `cowtest` 就完成了。
+### Usertests
+- 卡在了 `test copyout` ，可能是有一些边角料的情况？
+挺好处理地，加上一些判定条件就好了。
+
+- 卡在了 `test sbrkbugs`
+遇到的问题似乎是这个：不知道 `sbrk(-0x10512)` 触发了什么错误，看起来像是不小心把某个部分清空了？
+```
+flags: 0x0000000000000000 0x0000000000000000
+usertrap(): unexpected scause 0x000000000000000c pid=6
+            sepc=0x0000000000005674 stval=0x0000000000005674
+```
+找了老半天原因原来是卡在这边，还怪好玩的。。。其实就是通过 `walk` 得到的地址是 `0`，这个异常没有好好处理，所以就卡在这里了。
+
+- 卡在了 `test reparent`
+居然对总空闲内存有一定的要求，要求前后的 `free page` 数目是一致的，这个要求其实还挺高的？
+
+卡在了这个部分，我们学一下 Lec 12。
+
+## 指导：
+罗伯特莫里斯的实验技巧：
+- 增量式代码撰写，一点点地测试与 debug：如果我们先完全完成我们的项目时，我们很有可能还没有对这个项目的细节有充分的了解，除非我们已经有了一些`debug`时的经验。
+- 决定下一步：通过人为构造 `panic` 来决定下一步的需求。
+- 面向测试来学习
+- 时常维持一个不错的代码版本，用来回溯
+
+我打算尝试第三次：希望能够顺利完成。
