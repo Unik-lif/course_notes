@@ -94,3 +94,33 @@ usertrap(): unexpected scause 0x000000000000000c pid=6
 - 时常维持一个不错的代码版本，用来回溯
 
 我打算尝试第三次：希望能够顺利完成。
+
+第三次成功了，需要注意的点在于
+- 其实当 `kfree` 调用时，如果是能够被 `free` 掉的情况，引用就只有一个，因此直接减掉一个引用，然后再判断是否为0，就可以决定是否释放掉某部分的物理内存了。
+- 写一个函数叫做`cowfault`，以方便我们在 `traps.c` 文件和 `vm.c` 文件之中复用。
+- 在 `cowfault` 发生的时候，其实可以直接调 `kfree` ，因为在部分情况下 `cowfault` 发生时，正好原来我们操作的页引用个数已经是 `1` 了，在 `cowfault` 发生后，引用个数会变成 `0` ，可以直接释放掉。我先前卡在这里，一直少个 `1/2` 页没有释放掉。其实这个可能性确实是存在的。
+
+这个实验真挺难的，写了十几个小时肯定是有：下面是通过记录。
+```
+== Test running cowtest == 
+$ make qemu-gdb
+(8.2s) 
+== Test   simple == 
+  simple: OK 
+== Test   three == 
+  three: OK 
+== Test   file == 
+  file: OK 
+== Test usertests == 
+$ make qemu-gdb
+(76.8s) 
+== Test   usertests: copyin == 
+  usertests: copyin: OK 
+== Test   usertests: copyout == 
+  usertests: copyout: OK 
+== Test   usertests: all tests == 
+  usertests: all tests: OK 
+== Test time == 
+time: OK 
+Score: 110/110
+```
