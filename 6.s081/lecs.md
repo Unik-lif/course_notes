@@ -293,6 +293,7 @@ Deadlock: deadlock embrace.
 
 one solution: order that locks. full operations have to acquire locks in that order.
 
+虽然我们没有必要对于所有的锁都做一定的排序，但是当我们比较两个锁的优先级之时，我们要有能力能够比较出来。
 ### Lock vs modularity
 lock ordering must be global => should be aware of other locks.
 
@@ -356,7 +357,7 @@ inst1..n 不会因为优化越过 fence1 在 fence1 之后执行，inst2n..3n �
 特别的， sync 指令不仅对硬件有效，对于编译器一样有效。所以 sync 是个好东西。
 
 riscv 特权级手册对于内存模型有一个很详细的讨论，也会讨论编译器的行为，值得去看一下这一章。
-## Lec 10:
+## Lec 11:
 Thread - one serial execution. only use one CPU.
 
 Thread has pc, regs, stack.
