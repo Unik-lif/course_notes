@@ -179,3 +179,65 @@ struct cpu {
 };
 ```
 到这边感觉应有的分析似乎都做好了，我们可以考虑做实验了。
+
+### 第二部分
+我们继续分析一些同步原语在这边的应用情况：首先是 sleep ，它的语义和 Unix 的基本维持一致。
+```C
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
+void
+sleep(void *chan, struct spinlock *lk)
+{
+  // 在调用 sleep 时，首先你得有 p->lock
+  // 利用两个锁的重合部分，避免敏感区域攻击窗口
+  struct proc *p = myproc();
+  
+  // Must acquire p->lock in order to
+  // change p->state and then call sched.
+  // Once we hold p->lock, we can be
+  // guaranteed that we won't miss any wakeup
+  // (wakeup locks p->lock),
+  // so it's okay to release lk.
+  if(lk != &p->lock){  //DOC: sleeplock0
+    acquire(&p->lock);  //DOC: sleeplock1
+    release(lk);
+  }
+
+  // Go to sleep.
+  // 设置当前进程的频段为 chan
+  p->chan = chan;
+  p->state = SLEEPING;
+  // 调用到另外一个进程
+  sched();
+  // 回到这边的时候，已经 wakeup 了，p->state 也不是 SLEEPING
+  // Tidy up.
+  p->chan = 0;
+
+  // Reacquire original lock.
+  // 结束 sleep 后，需要重新获取 lk ，不过为什么要释放 p->lock ?
+  // 因为操作做完了，可以释放 p->lock 了
+  if(lk != &p->lock){
+    release(&p->lock);
+    acquire(lk);
+  }
+}
+```
+我们再看向对应的 wakeup 函数：
+```C
+// Wake up all processes sleeping on chan.
+// Must be called without any p->lock.
+void
+wakeup(void *chan)
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == SLEEPING && p->chan == chan) {
+      p->state = RUNNABLE;
+    }
+    release(&p->lock);
+  }
+}
+```
+功能很简单，似乎就是先获取 p->lock ，对相关进程做遍历直到看到某个频段一致，再设置它为 RUNNABLE 状态。

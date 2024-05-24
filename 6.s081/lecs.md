@@ -397,4 +397,97 @@ xv6的线程切换：
 Switch为什么没有保存全部的状态？
 - 它本质上是一个 C 函数，我们只需要保存好 callee 寄存器的值就好了
 
-## Lec 11:
+## Lec 13: 
+在 xv6 中，任何东西调用 swtch 时，我们总是让其预先获取这个线程的锁，然后让 scheduler 再释放掉这个锁。
+
+这是让其他的核在能够看到某个线程的状态时，能够保证获取了它的锁，因此也保证其他的核没有办法获取这个线程的状态。
+
+另外一个限制：线程除了 p->lock 以外，没有获得其他锁。这是一个非常重要的原则。
+
+假设有一个锁 L ，进程 A 和进程 B 都能拿来使用，在进程 A 通过 switch 切换走的时候，如果进程 B 想要用 L 锁，会在这 spinning ，进程 B 没法 switch 回来让 A 继续完成自己的功能，从而导致死锁。
+
+同协：
+- 减少 spinlock ，减少忙等所带来的资源消耗。
+- 为什么 sleep 要有锁的样子来做：同时让两个线程去访问一个驱动是非常危险的，此外对于部分共享数据，如用于得知信息的标志的访问，是需要用锁来做以保证安全性的。
+
+通过 uartwrite 解释了我们上一章的 lab7 之中，为什么 Unix 针对 condition 的接口是长那个样子的。
+
+这边课上讲了一个现象，当 release 锁的同时开启中断的时候，立刻中断就发生了，在 borken_sleep 还没有发生的时候， wakeup 就已经触发，从而没有唤醒任何线程。这个问题叫做 lost wakeup 问题
+
+这个容易出错的窗口需要关掉，需要有一个锁保护它的睡觉状态，原语上要求，它会原子地使得进程睡眠并且释放锁，让这个行为不可分割。这样 wakeup 就不会看到对面不是处于睡眠状态的这种情况了。
+
+实施起来，可以通过其他状态锁，保证在 sleep 获取到相关的锁之前，wakup 都没法生效。通过用两个锁覆盖了临界区域，来避免可能存在的攻击窗口。
+
+### 如何关闭线程？
+不可以简单地杀死
+- 其他线程有可能在使用它的栈
+- 它还有一些资源正在投入使用，尤其是在正在运行的时候，很有可能还是处于中间状态
+
+ Unix 的哲学： wait 与 exit 协作以彻底释放全部的子进程资源。
+
+kill 并不能真正地杀死一个进程，这是 Unix 以及 xv6 的哲学。要在后面自己慢慢回收掉。
+
+这一节课收货挺多的，继续加油。
+
+## Lec 14: FileSystem
+文件系统的结构
+
+inode <- file info, independent of name
+
+注意 inode 仅仅只是一个数字节点，只有当对于 inode 的索引 link 和 open 的 fd 均为 0 时，我们才可能删掉这个 inode
+
+### FS Layers
+```
+======================
+ names / fds
+======================
+  inode -> read/write
+======================
+  icache -> sync
+======================
+    Logging
+======================
+  buf  cache
+======================
+    Disk
+```
+### 存储设备
+一些术语
+- HDD: 10msec
+- SDD: 10 us - 1 ms
+- Sector: 512 bytes
+- blocks: 由文件系统定义，在 xv6 中是 1024 字节
+
+CPU 通过 PCIe 设备针对 SSD 进行读写工作
+### Disk layout
+直接把它当做大型数组就可以了。
+
+在 xv6 中的结构像是如下所示：
+```
+block 0: 空的
+block 1: 超级块，用来描述文件系统
+blcok 2 - 31: 日志信息
+block 32 - 45: inodes - 64 byes for each inode
+block 45 - 46: bitmap
+block 46 ~ : data blocks (or metadata block)
+```
+e.g. read inode 10 => 32 + inode number(a.k.a 10) * 64 / 1024 以此得知我们从哪一个 block 中获取 inode 10 的值
+### On-disk inode
+inode 代表了一个文件的实体，可能对应多个文件的名称
+```
+type
+nlink: link count to a inode
+size: in bytes
+blkn 0
+...
+blkn 11 (for direct block)
+blkn 12: indirect block, point to the indirect number. 对应 256 个块，每个块 ID 的长度为 4 字节
+```
+因此一个最大文件大小是 268 KB
+### Directories
+```      
+         2          14 bytes
+entry inode num  filename
+```
+对于 root inode ，找到文件 /y/x 的流程为：首先在 root inode 对应的 inode 中，找到 y 字符串是否存在，如果存在则继续读这个 inode 。逐步向下 scan 进去。
+
