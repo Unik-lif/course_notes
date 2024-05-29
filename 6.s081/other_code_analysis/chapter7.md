@@ -241,3 +241,234 @@ wakeup(void *chan)
 }
 ```
 功能很简单，似乎就是先获取 p->lock ，对相关进程做遍历直到看到某个频段一致，再设置它为 RUNNABLE 状态。
+
+在后面的章节针对 pipe 的读写做了一些简单的研究，我们调研如下：一般来说，我们先得 write ，才能 read
+```C
+int
+pipewrite(struct pipe *pi, uint64 addr, int n)
+{
+  int i;
+  char ch;
+  struct proc *pr = myproc();
+
+  acquire(&pi->lock);
+  for(i = 0; i < n; i++){
+    // 满了就不能再向这个buff空间中写了，那样的话就得进入 wakeup ，让 piperead 把东西消费掉
+    // 然后自己陷入睡觉状态，直到 piperead 搞定后唤醒自己
+    while(pi->nwrite == pi->nread + PIPESIZE){  //DOC: pipewrite-full
+      if(pi->readopen == 0 || pr->killed){
+        release(&pi->lock);
+        return -1;
+      }
+      wakeup(&pi->nread);
+      sleep(&pi->nwrite, &pi->lock);
+    }
+    // 需要通过页表进行解析得知 addr + i 对应的字符到底是什么
+    if(copyin(pr->pagetable, &ch, addr + i, 1) == -1)
+      break;
+    // 然后再赋值给 data 部分
+    pi->data[pi->nwrite++ % PIPESIZE] = ch;
+  }
+  wakeup(&pi->nread);
+  release(&pi->lock);
+  return i;
+}
+
+int
+piperead(struct pipe *pi, uint64 addr, int n)
+{
+  int i;
+  struct proc *pr = myproc();
+  char ch;
+  // 首先尝试获得 pipe 所对应的 lock 结构
+  acquire(&pi->lock);
+  // 如果该 pipe 是空的，并且 pi->writeopen 端是开启着的
+  // 说明有人打算向这个 pipe 进行写操作，但是目前这边还是空的
+  // 自然，我们此时没有办法从 pipe 中读取字符
+  while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty
+    if(pr->killed){
+      release(&pi->lock);
+      return -1;
+    }
+    // 没办法，我们只好等待，等到 pi->nread 的值被唤醒
+    sleep(&pi->nread, &pi->lock); //DOC: piperead-sleep
+  }
+  // 否则说明 pi->nread 和 pi->nwrite 的值不同
+  for(i = 0; i < n; i++){  //DOC: piperead-copy
+    if(pi->nread == pi->nwrite)
+      break;
+    // 则从 pi->data 读取值出来，直到读完 n 个，或者读完 pipe buff 内存放的字符
+    ch = pi->data[pi->nread++ % PIPESIZE];
+    if(copyout(pr->pagetable, addr + i, &ch, 1) == -1)
+      break;
+  }
+  // 告知 nwrite ，即 pipewrite 可以运行了
+  wakeup(&pi->nwrite);  //DOC: piperead-wakeup
+  release(&pi->lock);
+  return i;
+}
+```
+pipe code 拥有独立的 sleep channels
+### 系统调用的实现
+Wait, exit and kill
+
+wait 与 exit ，以及 kill 是工作在一起的
+
+首先我们来看一下 wait 系统调用：
+```C
+// Wait for a child process to exit and return its pid.
+// Return -1 if this process has no children.
+int
+wait(uint64 addr)
+{
+  struct proc *np;
+  int havekids, pid;
+  struct proc *p = myproc();
+
+  // hold p->lock for the whole time to avoid lost
+  // wakeups from a child's exit().
+  acquire(&p->lock);
+
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    // 对于 np 进行遍历
+    for(np = proc; np < &proc[NPROC]; np++){
+      // this code uses np->parent without holding np->lock.
+      // acquiring the lock first would cause a deadlock,
+      // since np might be an ancestor, and we already hold p->lock.
+      // 检测遍历过来是否正好是自己的孩子
+      if(np->parent == p){
+        // np->parent can't change between the check and the acquire()
+        // because only the parent changes it, and we're the parent.
+
+        // 必须等到 np 跑完后，父进程才能得到 np->lock
+        acquire(&np->lock);
+        havekids = 1;
+        if(np->state == ZOMBIE){
+          // Found one.
+          pid = np->pid;
+          // 将子进程的 status 记录到 addr 所对应的地址上
+          if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
+                                  sizeof(np->xstate)) < 0) {
+            release(&np->lock);
+            release(&p->lock);
+            return -1;
+          }
+          // 释放掉子进程的进程空间
+          freeproc(np);
+          release(&np->lock);
+          release(&p->lock);
+          return pid;
+        }
+        release(&np->lock);
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || p->killed){
+      release(&p->lock);
+      return -1;
+    }
+    
+    // Wait for a child to exit.
+    // 没跑完就等着
+    sleep(p, &p->lock);  //DOC: wait-sleep
+  }
+}
+```
+我们再研究一下 kill：会发现它的结构比我们想象的简单很多，其实就只是获得 p->lock 之后，设置 p->killed = 1 之类的事情。不过为什么要把 p->state 从 SLEEPING 切换到 RUNNABLE？兴许是重新将其放到调度队列中，否则没法处理？
+```C
+// Kill the process with the given pid.
+// The victim won't exit until it tries to return
+// to user space (see usertrap() in trap.c).
+int
+kill(int pid)
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      p->killed = 1;
+      if(p->state == SLEEPING){
+        // Wake process from sleep().
+        p->state = RUNNABLE;
+      }
+      release(&p->lock);
+      return 0;
+    }
+    release(&p->lock);
+  }
+  return -1;
+}
+```
+为了搞清楚这一点，以及与 wait 的联合使用，我们需要继续研究一下 exit ：
+```C
+// Exit the current process.  Does not return.
+// An exited process remains in the zombie state
+// until its parent calls wait().
+void
+exit(int status)
+{
+  struct proc *p = myproc();
+
+  if(p == initproc)
+    panic("init exiting");
+
+  // Close all open files.
+  for(int fd = 0; fd < NOFILE; fd++){
+    if(p->ofile[fd]){
+      struct file *f = p->ofile[fd];
+      fileclose(f);
+      p->ofile[fd] = 0;
+    }
+  }
+  // 涉及了部分文件系统相关的操作
+  begin_op();
+  iput(p->cwd);
+  end_op();
+  p->cwd = 0;
+
+  // we might re-parent a child to init. we can't be precise about
+  // waking up init, since we can't acquire its lock once we've
+  // acquired any other proc lock. so wake up init whether that's
+  // necessary or not. init may miss this wakeup, but that seems
+  // harmless.
+  acquire(&initproc->lock);
+  wakeup1(initproc);
+  release(&initproc->lock);
+
+  // grab a copy of p->parent, to ensure that we unlock the same
+  // parent we locked. in case our parent gives us away to init while
+  // we're waiting for the parent lock. we may then race with an
+  // exiting parent, but the result will be a harmless spurious wakeup
+  // to a dead or wrong process; proc structs are never re-allocated
+  // as anything else.
+  acquire(&p->lock);
+  struct proc *original_parent = p->parent;
+  release(&p->lock);
+  
+  // we need the parent's lock in order to wake it up from wait().
+  // the parent-then-child rule says we have to lock it first.
+  acquire(&original_parent->lock);
+
+  acquire(&p->lock);
+
+  // Give any children to init.
+  reparent(p);
+
+  // Parent might be sleeping in wait().
+  wakeup1(original_parent);
+
+  p->xstate = status;
+  p->state = ZOMBIE;
+
+  release(&original_parent->lock);
+
+  // Jump into the scheduler, never to return.
+  sched();
+  panic("zombie exit");
+}
+```
+到这边，我们对于这一章的分析算是结束了。不过似乎还不足以支撑我们继续往下做实验。
