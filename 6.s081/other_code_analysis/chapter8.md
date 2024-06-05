@@ -84,14 +84,16 @@ bget(uint dev, uint blockno)
   acquire(&bcache.lock);
 
   // Is the block already cached?
-  // 对于 bcache 中的 buf 单元进行遍历
+  // 对于 bcache 中的 buf 单元进行遍历，所以要用 bcache.lock 加锁
+  // 从 bcache.head 顺序访问，
   for(b = bcache.head.next; b != &bcache.head; b = b->next){
     // 设备号和 blockno 值都相同，表示确实对该 buf 单元达成了引用
     // 并且似乎确实已经做了 cached ，可以直接返回我们的 buf 单元
     if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
+      // 跑到这边的时候，我们对于 bcache 的遍历已经结束了，因此已经可以进行遍历了
       release(&bcache.lock);
-      // 使用时还得把这边的 buf 的这个锁给拿到
+      // 使用时还得把这边的 buf 的这个锁给拿到， bget 会返回这个 buf 块
       acquiresleep(&b->lock);
       return b;
     }
@@ -108,8 +110,11 @@ bget(uint dev, uint blockno)
       b->blockno = blockno;
       b->valid = 0;
       b->refcnt = 1;
+      // 为什么 bcache.lock 要在对于 b 进行了操作之后再释放？
+      // 因为 bcache 的真实目的其实是为了保证最多每个 sector （由 blockno 对应）只有一个 cached buffer
       release(&bcache.lock);
       // b->refcnt >= 1 并且 b->lock 被加了锁，说明该 buf 单元处于忙碌的状态
+      // b->lock 并没有特别大的同步需求，其主要还是为了实现对 buf 内容的保存
       acquiresleep(&b->lock);
       return b;
     }
@@ -124,13 +129,14 @@ brelse(struct buf *b)
 {
   if(!holdingsleep(&b->lock))
     panic("brelse");
-  // b->lock 被 holding 时表示忙碌
+  // b->lock 被 holding 时表示该 buf 正在被使用
   releasesleep(&b->lock);
 
   acquire(&bcache.lock);
   b->refcnt--;
   if (b->refcnt == 0) {
     // no one is waiting for it.
+    // 遭到 release 的块，将会成为 head 所指向的下一个块
     b->next->prev = b->prev;
     b->prev->next = b->next;
     b->next = bcache.head.next;
