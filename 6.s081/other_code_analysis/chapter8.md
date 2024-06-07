@@ -150,35 +150,89 @@ brelse(struct buf *b)
 ```
 到这边，为了 Lab 8 所需要的代码分析任务算是完成了。
 
-### 8.7 Block Allocator
-感觉单拎出来东西再去看文件系统的代码有点奇怪，不如我们先把文件系统相关的东西全部看完，再开始看代码。
+### 
 
-这边提到 mkfs 的作用，我们在完成了这章的阅读后在记得回溯一下这个工具。
 
-先尝试分析 balloc 
+## 文件系统代码梳理
+对于文件系统还是感觉非常奇怪，我们还是多花一点时间读一下代码的情况吧，看看一步一步都到底是怎么做的。
+
+首先，文件系统是其他工具制造出来的，我们需要看一下 mkfs 函数。
+
+filesystem 是在 forkret 中做的初始化。而 forkret 这个函数也是只在刚进来的时候执行一次。
 ```C
-// Allocate a zeroed disk block.
-static uint
-balloc(uint dev)
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+void
+forkret(void)
 {
-  int b, bi, m;
+  static int first = 1;
+
+  // Still holding p->lock from scheduler.
+  release(&myproc()->lock);
+
+  if (first) {
+    // File system initialization must be run in the context of a
+    // regular process (e.g., because it calls sleep), and thus cannot
+    // be run from main().
+    first = 0;
+    fsinit(ROOTDEV);
+  }
+
+  usertrapret();
+}
+
+// Init fs
+void
+fsinit(int dev) {
+  readsb(dev, &sb);
+  if(sb.magic != FSMAGIC)
+    panic("invalid file system");
+  initlog(dev, &sb);
+}
+
+// Read the super block.
+static void
+readsb(int dev, struct superblock *sb)
+{
   struct buf *bp;
 
-  bp = 0;
-  for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
-    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
-      m = 1 << (bi % 8);
-      if((bp->data[bi/8] & m) == 0){  // Is block free?
-        bp->data[bi/8] |= m;  // Mark block in use.
-        log_write(bp);
-        brelse(bp);
-        bzero(dev, b + bi);
-        return b + bi;
-      }
-    }
-    brelse(bp);
-  }
-  panic("balloc: out of blocks");
+  bp = bread(dev, 1);
+  memmove(sb, bp->data, sizeof(*sb));
+  brelse(bp);
+}
+```
+在这边通过 fsinit 来初始化，然后用 readsb 来读取信息到 sb 之中。特别的，由于 superblock data 信息是存在 device 中的第一个块中，可以轻松这么读出来。 bread 读完之后自己释放就了得了。
+
+马上解析该数据的魔数是否是对的。
+
+不过这边最巧妙的其实是 first 这个变量的使用，它被定义为 static int 类型，也就是能够在全局中被使用，但是只能被初始化一次，这个良好的特性使得我们其他进程访问到的 first 和第一个进程访问到的 first 是同一个，也因此能够避免我们多次重复初始化文件系统。
+
+对应的链接是这个，还挺新奇的，不过也有可能是我的基础太烂了，呜呜哭了。https://stackoverflow.com/questions/5567529/what-makes-a-static-variable-initialize-only-once
+
+那这边这个文件系统的初始化还怪快的？
+
+接下来的重头戏是 initlog ，用来让文件系统能够有持久化的特性（崩溃一致性）
+```C
+void
+initlog(int dev, struct superblock *sb)
+{
+  if (sizeof(struct logheader) >= BSIZE)
+    panic("initlog: too big logheader");
+
+  initlock(&log.lock, "log");
+  // 这边的设置信息疑似是在 mkfs 的时候写的
+  log.start = sb->logstart;
+  log.size = sb->nlog;
+  log.dev = dev;
+  recover_from_log();
+}
+
+static void
+recover_from_log(void)
+{
+  read_head();
+  install_trans(1); // if committed, copy from log to disk
+  log.lh.n = 0;
+  write_head(); // clear the log
 }
 ```
