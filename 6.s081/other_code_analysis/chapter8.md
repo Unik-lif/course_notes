@@ -149,3 +149,36 @@ brelse(struct buf *b)
 }
 ```
 到这边，为了 Lab 8 所需要的代码分析任务算是完成了。
+
+### 8.7 Block Allocator
+感觉单拎出来东西再去看文件系统的代码有点奇怪，不如我们先把文件系统相关的东西全部看完，再开始看代码。
+
+这边提到 mkfs 的作用，我们在完成了这章的阅读后在记得回溯一下这个工具。
+
+先尝试分析 balloc 
+```C
+// Allocate a zeroed disk block.
+static uint
+balloc(uint dev)
+{
+  int b, bi, m;
+  struct buf *bp;
+
+  bp = 0;
+  for(b = 0; b < sb.size; b += BPB){
+    bp = bread(dev, BBLOCK(b, sb));
+    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
+      m = 1 << (bi % 8);
+      if((bp->data[bi/8] & m) == 0){  // Is block free?
+        bp->data[bi/8] |= m;  // Mark block in use.
+        log_write(bp);
+        brelse(bp);
+        bzero(dev, b + bi);
+        return b + bi;
+      }
+    }
+    brelse(bp);
+  }
+  panic("balloc: out of blocks");
+}
+```

@@ -491,3 +491,44 @@ entry inode num  filename
 ```
 对于 root inode ，找到文件 /y/x 的流程为：首先在 root inode 对应的 inode 中，找到 y 字符串是否存在，如果存在则继续读这个 inode 。逐步向下 scan 进去。
 
+
+其他一些观点：
+- 采用睡眠锁是考虑了本身 buf 涉及磁盘操作，动作会比较慢，不需要忙等。并且睡眠锁确实相比自旋锁有很多性能的优势。
+
+## Lec 15: Crash safety
+Frans Kaashoek 对于 debug 的建议：
+- 可以考虑最传统的 printf 大法
+- 可以采用一些竞态检测器
+- 可以多加上 assert 来做处理，以让程序的行为在我们的预期之中
+
+真实的问题：崩溃真的有可能会让文件系统处于不太正确/内容不太一致的样子。
+
+问题在于文件系统往往会多步操作，一旦 crash 出现在关键的位置，那可能文件系统就会出错，出现正确性不足的问题。
+
+如何缓解这个问题？logging
+
+crash may leave fs invariants violated. => After reboot, we might crash again, or we don't crash, while the R/W data is not correct.
+
+### Solution:
+logging
+- atomic fscalls
+- fast recovery
+- high performance
+
+不同于直接操作内存，我们会把写入的记录在日志中详细地记录下来。
+
+步骤如下：
+1. log writes
+2. commit op：记录一组写入的日志信息，这一组日志中的情况一定在之后要被执行
+3. install：我们完成本应完成的真正 fs 操作
+4. clean log
+
+在1/2/4被打断什么也不会发生，在3被打断我们只要重新做一遍就好了，虽然是覆盖写，但是不会影响正确性。
+
+commit的行为是原子的，commit本质上是对某一个块进行写，在文件系统的假定中，这个是不可再往下分割的。所以就是要么不做要么做绝。
+
+其他一些有意思的事
+- begin_op 和 end_op 伴随了系统的全局，以保证我们的文件系统操作是原子的
+- 
+具体细节还是在看书和看代码时再慢慢落实。
+
