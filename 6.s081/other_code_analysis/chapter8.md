@@ -156,7 +156,77 @@ brelse(struct buf *b)
 ## 文件系统代码梳理
 对于文件系统还是感觉非常奇怪，我们还是多花一点时间读一下代码的情况吧，看看一步一步都到底是怎么做的。
 
-首先，文件系统是其他工具制造出来的，我们需要看一下 mkfs 函数。
+首先，文件系统是其他工具制造出来的，我们需要看一下 mkfs 程序。
+
+在 Makefile 中有这个程序的生成和使用过程：
+```
+fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
+	mkfs/mkfs fs.img README $(UEXTRA) $(UPROGS)
+```
+下面是一个代码：
+```C
+int
+main(int argc, char *argv[])
+{
+  int i, cc, fd;
+  uint rootino, inum, off;
+  struct dirent de;
+  char buf[BSIZE];
+  struct dinode din;
+
+  // 判断当前 qemu 环境中的 int 大小是否是 4 个字节
+  static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
+
+  // 东西要放到 fs.img 之中
+  if(argc < 2){
+    fprintf(stderr, "Usage: mkfs fs.img files...\n");
+    exit(1);
+  }
+  // 判断 block size 是否是 dinode 和 dirent 大小的倍数
+  // BSIZE 大小为 1024 字节
+  /*
+    dinode 表示 data node，刚好 64 字节
+    struct dinode {
+      short type;           // File type
+      short major;          // Major device number (T_DEVICE only)
+      short minor;          // Minor device number (T_DEVICE only)
+      short nlink;          // Number of links to inode in file system
+      uint size;            // Size of file (bytes)
+      uint addrs[NDIRECT+1];   // Data block addresses
+    };
+    后面的 dirent 正好是 16 字节
+  */
+
+  assert((BSIZE % sizeof(struct dinode)) == 0);
+  assert((BSIZE % sizeof(struct dirent)) == 0);
+
+  fsfd = open(argv[1], O_RDWR|O_CREAT|O_TRUNC, 0666);
+  if(fsfd < 0){
+    perror(argv[1]);
+    exit(1);
+  }
+  // Disk layout:
+  // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
+  
+  // 1 fs block = 1 disk sector
+  // nmeta 表示 metadata 所对应的 metadata 所占据的 blocks 一共有多少个
+  // 首先是空的 block 以及 superblock ，之后记录了 nlog 和 ninodeblocks 以及 nbitmap 的总数
+  // nlog: 存放 log 信息的 block 总数，一共是 30 个
+  // ninodeblocks: 存放 inode 所占据的块总数，通过 NINODES / IPB + 1 来计算，一共有 200 个 Inodes ，每个 block 有 IPB 个 Inode ，然后再 +1 表示富余
+  // nbitmap: 用每个 bit 来表示当前的空间是否得到了分配， FSSIZE/(BSIZE*8) + 1 中 FSSIZE ， FSSIZE 表示文件系统的总 blocks 数目，然后 nbitmap 中的 block 中的每个 bit 都表示一个 block 当前的分配情况，由此来确定到底是否该文件系统位置的东西被分配了
+  nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  nblocks = FSSIZE - nmeta;
+
+  sb.magic = FSMAGIC;
+  // 
+  sb.size = xint(FSSIZE);
+  sb.nblocks = xint(nblocks);
+  sb.ninodes = xint(NINODES);
+  sb.nlog = xint(nlog);
+  sb.logstart = xint(2);
+  sb.inodestart = xint(2+nlog);
+  sb.bmapstart = xint(2+nlog+ninodeblocks);
+```
 
 filesystem 是在 forkret 中做的初始化。而 forkret 这个函数也是只在刚进来的时候执行一次。
 ```C
