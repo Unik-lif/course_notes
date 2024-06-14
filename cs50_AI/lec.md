@@ -1,4 +1,4 @@
-## Lec1: Search
+## Lec0: Search
 ### Search
 agent: 一个根据环境输入决定在当前环境做何种事情的对象
 
@@ -77,7 +77,7 @@ function Min-Value(state):
 ### Optimizations: Alpha-beta pruning
 当我已经知道可以拿到一个最优的解，我就不必再去遍历了。
 
-## Lec2: Knowledge
+## Lec1: Knowledge
 我们应该如何让计算机能够推理？
 ### Proposition
 用字母来表述某一条语句

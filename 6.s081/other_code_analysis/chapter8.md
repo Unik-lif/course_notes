@@ -218,16 +218,168 @@ main(int argc, char *argv[])
   nblocks = FSSIZE - nmeta;
 
   sb.magic = FSMAGIC;
-  // 
+  // 这边是为了解决一些大小端序的问题
+  // 不过我的疑问在于魔数这边，凭什么他就不需要转换？不也跟其他变量一样被xv6用了吗？
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
   sb.ninodes = xint(NINODES);
   sb.nlog = xint(nlog);
   sb.logstart = xint(2);
+  // 参考上面的 disk layout
   sb.inodestart = xint(2+nlog);
   sb.bmapstart = xint(2+nlog+ninodeblocks);
+  
+  printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
+         nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
+
+  freeblock = nmeta;     // the first free block that we can allocate
+
+  // wsect 函数把 buf 内的数据写到 i sector 所对应偏移量位置
+  // 这边看起来其实就是全部初始化设置为 0 一次
+  // 每个 sector 对应 1024 字节
+  // 其实就是不停往下写了这么多东西，通过 lseek 让 fsfd 向下移动
+  for(i = 0; i < FSSIZE; i++)
+    wsect(i, zeroes); // write sect 和 write inode 不是同一个粒度
+
+  memset(buf, 0, sizeof(buf));
+  // 将 sb 的信息写入到 buf 之中，但现在的 sb 还没有真正写到 sb 所对应的 filesystem 块位置
+  memmove(buf, &sb, sizeof(sb));
+  // 将 sb 信息通过 buf 真正写到 filesystem 的 sb 理应存在的位置
+  wsect(1, buf);
+
+  // 仔细研究一下 ialloc 函数
+  // 刚刚做了初始化，反正空间全部给定了，现在准备写东西
+  rootino = ialloc(T_DIR);
+  assert(rootino == ROOTINO);
+  // 刚刚分配了 ROOTINO ，它所对应的 data inode 我们确实已经分配了
+  bzero(&de, sizeof(de));
+  de.inum = xshort(rootino);
+  strcpy(de.name, ".");
+  // inode append derent to the rootino
+  iappend(rootino, &de, sizeof(de));
+
+  bzero(&de, sizeof(de));
+  de.inum = xshort(rootino);
+  strcpy(de.name, "..");
+  iappend(rootino, &de, sizeof(de));
 ```
 
+```C
+// 文件系统尚没有构成，可以一以相对便捷的方式来做
+uint
+ialloc(ushort type)
+{
+  uint inum = freeinode++;
+  // 64 bytes
+  struct dinode din;
+  
+  bzero(&din, sizeof(din));
+  din.type = xshort(type);
+  din.nlink = xshort(1);
+  din.size = xint(0);
+  // write inode
+  winode(inum, &din);
+  return inum;
+}
+
+void
+winode(uint inum, struct dinode *ip)
+{
+  char buf[BSIZE];
+  uint bn;
+  struct dinode *dip;
+  // 对应的是从 nlog 之后的 inode block 开始计量，在 inode block 中存放文件目录等信息，
+  // 会对上一些基本的索引情况，包括直接索引和间接索引
+  bn = IBLOCK(inum, sb);
+  // 得到 inum 所对应的 block number
+  // read sector 把东西读到 buf 中
+  // 大小为 BSIZE
+  // inode number => block number => read block to the buf => buf
+  rsect(bn, buf);
+  // 先通过 rsect 得到 buf 信息，然后对这个 buf 信息中我们需要修改的特定的 inum 做了修改之后
+  // 重新把 buf 写回这个 block
+  // 其实还是非常合理的
+  // 先找到 block ，然后读 block 信息，根据 inum 找到当前 block 中的需要修改的 inode 位置，修改 block 信息对应的 buf
+  // 最后再把 buf 写回到 block 之中
+  dip = ((struct dinode*)buf) + (inum % IPB);
+  // 把 *ip 的信息赋值给 *dip
+  *dip = *ip;
+  wsect(bn, buf);
+}
+
+void
+rsect(uint sec, void *buf)
+{
+  // 送到对应的 sec * BSIZE 偏移量位置处
+  if(lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE){
+    perror("lseek");
+    exit(1);
+  }
+  // read fsfd to buf
+  if(read(fsfd, buf, BSIZE) != BSIZE){
+    perror("read");
+    exit(1);
+  }
+}
+
+void
+wsect(uint sec, void *buf)
+{
+  if(lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE){
+    perror("lseek");
+    exit(1);
+  }
+  if(write(fsfd, buf, BSIZE) != BSIZE){
+    perror("write");
+    exit(1);
+  }
+}
+
+// iappend, inode append.
+void
+iappend(uint inum, void *xp, int n)
+{
+  char *p = (char*)xp;
+  uint fbn, off, n1;
+  struct dinode din;
+  char buf[BSIZE];
+  uint indirect[NINDIRECT];
+  uint x;
+
+  rinode(inum, &din);
+  off = xint(din.size);
+  // printf("append inum %d at off %d sz %d\n", inum, off, n);
+  while(n > 0){
+    fbn = off / BSIZE;
+    assert(fbn < MAXFILE);
+    if(fbn < NDIRECT){
+      if(xint(din.addrs[fbn]) == 0){
+        din.addrs[fbn] = xint(freeblock++);
+      }
+      x = xint(din.addrs[fbn]);
+    } else {
+      if(xint(din.addrs[NDIRECT]) == 0){
+        din.addrs[NDIRECT] = xint(freeblock++);
+      }
+      rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+      if(indirect[fbn - NDIRECT] == 0){
+        indirect[fbn - NDIRECT] = xint(freeblock++);
+        wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+      }
+      x = xint(indirect[fbn-NDIRECT]);
+    }
+    n1 = min(n, (fbn + 1) * BSIZE - off);
+    rsect(x, buf);
+    bcopy(p, buf + off - (fbn * BSIZE), n1);
+    wsect(x, buf);
+    n -= n1;
+    off += n1;
+    p += n1;
+  }
+  din.size = xint(off);
+  winode(inum, &din);
+}
+```
 filesystem 是在 forkret 中做的初始化。而 forkret 这个函数也是只在刚进来的时候执行一次。
 ```C
 // A fork child's very first scheduling by scheduler()
