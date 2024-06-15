@@ -30,3 +30,22 @@ How to read paper efficiently?
 - scalbility: 多倍资源可以获得多倍的性能提升
 
 当我们加了足够多的某个设备，性能的瓶颈将会发生转移。
+
+Fault Tolerance
+- Availability
+- Recoverability
+
+好的容错系统往往在可用性的基础上，还能够允许系统能够被恢复
+
+Usage:
+- NV Storage / Replication
+
+Consistency
+- 在分布式系统中可能会有多个副本，他们之间要做好同步的工作，尤其是在针对共享数据做修改的时候
+- strong/weak guarantee of the consistency
+- 不要把鸡蛋放到同一个篮子里/分区容错
+
+Mapreduce
+- a system originally built by Google
+- scale to millions of servers and computers
+
