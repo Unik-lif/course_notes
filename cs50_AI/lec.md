@@ -102,3 +102,20 @@ Model checking:
 通过我们的知识库来对机器进行提问，机器通过谓词逻辑来决定该提问是否正确。
 
 这边记得看一下代码哈哈，我觉得真的非常有意思。
+
+这件事情也被称为Knowledge Engineering.
+
+该机器的好处是：可以解决一些Logic Puzzles,而这些谜题往往不是那么轻易就能figure out。
+
+#### 一些公理
+- 德摩根
+- implication reduction
+- bicondition
+- etc.
+
+#### First-Order Logic
+- Person(Minerva): Minerva is a person
+- House(gryffindor): Gryffindor is a house
+
+This give us ways to express our logic better.
+
