@@ -163,7 +163,7 @@ brelse(struct buf *b)
 fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
 	mkfs/mkfs fs.img README $(UEXTRA) $(UPROGS)
 ```
-下面是一个代码：
+下面是该工具所对应的代码：
 ```C
 int
 main(int argc, char *argv[])
@@ -199,7 +199,7 @@ main(int argc, char *argv[])
 
   assert((BSIZE % sizeof(struct dinode)) == 0);
   assert((BSIZE % sizeof(struct dirent)) == 0);
-
+  // 打开 fs.img 这个文件，准备对其进行编辑
   fsfd = open(argv[1], O_RDWR|O_CREAT|O_TRUNC, 0666);
   if(fsfd < 0){
     perror(argv[1]);
@@ -208,13 +208,17 @@ main(int argc, char *argv[])
   // Disk layout:
   // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
   
+  // 需要注意，Inode 的单位要小于 Block
   // 1 fs block = 1 disk sector
   // nmeta 表示 metadata 所对应的 metadata 所占据的 blocks 一共有多少个
   // 首先是空的 block 以及 superblock ，之后记录了 nlog 和 ninodeblocks 以及 nbitmap 的总数
   // nlog: 存放 log 信息的 block 总数，一共是 30 个
   // ninodeblocks: 存放 inode 所占据的块总数，通过 NINODES / IPB + 1 来计算，一共有 200 个 Inodes ，每个 block 有 IPB 个 Inode ，然后再 +1 表示富余
-  // nbitmap: 用每个 bit 来表示当前的空间是否得到了分配， FSSIZE/(BSIZE*8) + 1 中 FSSIZE ， FSSIZE 表示文件系统的总 blocks 数目，然后 nbitmap 中的 block 中的每个 bit 都表示一个 block 当前的分配情况，由此来确定到底是否该文件系统位置的东西被分配了
+  // nbitmap: 用每个 bit 来表示当前的空间是否得到了分配， FSSIZE/(BSIZE*8) + 1 中 FSSIZE ， FSSIZE 表示文件系统的总 blocks 数目，由于我们给 nbitmap 赋予的职能是利用 bit 来表示 block 的占用情况，因此每个 block 恰好可以表示 1024 * 8 这么多个 block 的使用情况，因此所占据的用于看 block 分配情况的 nbitmap block 总数可以通过上面的方式计算得到
+
+  // nmeta 表示存放 metadata 的数据，这些数据是用来管理的，和作为 data block 的 nblocks 需要区分开来
   nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  // 剩下的 block 全部用于存放数据
   nblocks = FSSIZE - nmeta;
 
   sb.magic = FSMAGIC;
@@ -232,7 +236,7 @@ main(int argc, char *argv[])
   printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
-  freeblock = nmeta;     // the first free block that we can allocate
+  freeblock = nmeta;     // the first free block that we can allocate，前面的那些 blocks 早就已经被占用干净了
 
   // wsect 函数把 buf 内的数据写到 i sector 所对应偏移量位置
   // 这边看起来其实就是全部初始化设置为 0 一次
