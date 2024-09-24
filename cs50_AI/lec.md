@@ -97,7 +97,7 @@ Inference: 根据 knowledge base 所做的合情推理
 Model checking:
 - To determine if $ KB \models \alpha $: 遍历所有可能的 model 情况，如果 KB 为 True 时 $\alpha$ 也一直为 True,那么就通过检查。
 - KB 就是 Knowledge Base
-- $\alpha$ 是我们的 Query 用于询问的问题
+- $\alpha$ 是我们的 Query 用于询问的问题 
 
 通过我们的知识库来对机器进行提问，机器通过谓词逻辑来决定该提问是否正确。
 
@@ -107,6 +107,7 @@ Model checking:
 
 该机器的好处是：可以解决一些Logic Puzzles,而这些谜题往往不是那么轻易就能figure out。
 
+特别的，KB并不是一般的逻辑，而往往是逻辑的整体，是给定的条件，因此不要把它当正常的逻辑词来处理，而把它当做已知信息。
 #### 一些公理
 - 德摩根
 - implication reduction
@@ -118,4 +119,60 @@ Model checking:
 - House(gryffindor): Gryffindor is a house
 
 This give us ways to express our logic better.
+
+## Lec2: Uncertainty
+Bayes' Rule
+$$P(b|a) = \frac{P(a|b)P(b)}{P(a)}$$
+
+Knowing P(medical test result| disease), we can calculate P(disease | medical test result)
+
+Bayes' network
+
+> 联系的普遍性
+
+将某件事情作为Node,对于多件事情，利用edges来进行链接，然后合并在一起来考虑某件事情可能发生的概率。
+
+主要是确认其他条件为恒定，检查当前我们需要再添加的额外条件所对应的概率。
+
+### Inference
+Query X: variable for which to compute distribution
+
+Evidence variables E: observed variables for event e
+
+Hidden variables Y: non-evidence, non-query variable
+
+Goal: Calculate P(X | e)
+
+Enumeration:
+
+$$P(X|e) = \alpha P(X, e) = \alpha \sum _{y}{P(X, e, y)}$$
+
+### Markov assumption
+the assumption that the current state depends on only a finite fixed number of previous states.
+
+The Markov chain is based on Transition Model.
+
+AI 学习的一般是 Observation，机器不易学习的东西则是 Hidden State ，这两个之间往往存在很多联系。
+
+比如伞和天气在下雨。这边的 Markov 链同样也可以用 Hidden 的来做
+
+## Lec 3:
+优化问题，考虑爬山模型，因为局部最优解的存在，存在一些爬山找邻居的策略，以更可能找到全局最优解。
+
+### Simulated Annealing
+从一个高温系统，慢慢稳定下来，得到一个解决方案。
+
+在一开始提高更大的随机性，在之后降低随机性。
+
+一开始提供一个更高的`Temperature`，之后，则降低`Temperature`
+
+通过添加一个概率修正，以让我们存在一定概率挑选更差的邻居值，以方便找到最后的全局最优解。
+
+旅行商问题：NP complete问题
+
+没有一个已知的很快的方法去找到解决方案
+
+但是可以找到相对好的解
+### 限制与约束图
+基本上限确认目标，然后再确认约束条件，之后开始优化训练。
 
