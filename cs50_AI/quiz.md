@@ -6,3 +6,6 @@ Answer
 - 5
 
 get all the answers right.
+## Quiz 1
+Skip, too easy.
+## Quiz 2
