@@ -9,3 +9,10 @@ get all the answers right.
 ## Quiz 1
 Skip, too easy.
 ## Quiz 2
+- 4/13
+
+- 1/2
+
+- choose Assuming we know the train is on time, whether or not there is track maintenance does not affect the probability that the appointment is attended.
+
+- 0.012
