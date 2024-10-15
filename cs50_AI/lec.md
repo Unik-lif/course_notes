@@ -177,3 +177,26 @@ AI 学习的一般是 Observation，机器不易学习的东西则是 Hidden Sta
 ### 限制与约束图
 基本上限确认目标，然后再确认约束条件，之后开始优化训练。
 
+Arc consistency:
+- 两个节点之间建立联系，要删掉其中一个节点所有会与Y相矛盾的情况可能，一直这么做直到稳定下来。 
+
+AC-3算法，特别需要要重新把Z放进来，因为X的情况发生了更新。
+
+backtracking search
+- 一个寻找稳态的递归类型算法，有点像深度优先搜索
+- 但是代价有点大，有很大的计算开销
+- 添加推理来减少计算分支数目
+- 可以避免多次的backtracking次数
+
+maintaining arc-consistency
+- enforcing arc-consistency every time we make a new assignment
+
+每次我们为某个变量添加新的值，就跑一次AC-3算法
+
+其他减小搜索空间的方法：
+- MRV：找剩下值情况最少的变量
+- start from the one with highest degree：触手更多
+- 挑一个选项，能够尽可能地去排除其他选项
+
+感觉就和做数独的逻辑是一样的，好神奇。
+

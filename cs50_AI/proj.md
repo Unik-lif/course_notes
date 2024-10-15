@@ -122,3 +122,8 @@ PageRank: the probability that a random surfer is on that page at any gien time.
 - dict不能直接替换，否则将会让其地址设置为一致（没错这个类型其实是地址引用级别的替换，可能做不到深拷贝，而是浅拷贝）
 - sample page rank是从其他page衍生过来的，需要注意
 
+### Heredity
+逻辑很冗长，但是内容很简单，高中生物课，印象里很多年前写的理综有类似的题目，想清楚了就很好写，唯一的麻烦就是，逻辑有点太长了。
+
+## Proj4
+### 
