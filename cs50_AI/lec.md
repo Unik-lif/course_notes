@@ -200,3 +200,97 @@ maintaining arc-consistency
 
 感觉就和做数独的逻辑是一样的，好神奇。
 
+## Lec 4:
+### Supervised Learning
+Human tell the machine the result.
+### Nearest neighbor classification
+given an input, chooses the class of the nearest data point to that input
+
+k-nearest-nighbor classification: A better way to choose the most common class, using k nearest data points to that input.
+
+### Perceptron Learning
+Using one single line to draw conclusion
+
+$ w_0 + w_1x_1 + w_2x_2 \geq 0 \, return \, 1 \, else \, return \,  0$
+
+If we choose weight vector $w: (w_0, w_1, w_2)$, input vector: $(x_0,  x_1, x_2)$, then we can use the dot product.
+
+#### Learning rule
+given data point $(x, y)$, update each weight according to:
+$w_i = w_i + \alpha(y-h_w(x))  \times x_i$
+
+where $y$ is the actual value, $h_w(x)$ is the prediction.
+
+#### Hard threshold vs Soft threshold
+Hard: we don't have a feeling like we are less or more sure about sth.
+
+Soft: a logestic-like curve.
+### Support Vector Machine
+Many types to seperate the two categories well
+### regression
+supervised learning task of learning a function mapping an input point to a continuous value
+
+Try to draw a line and find an estimate function to get the results based on the input.
+
+### How to evaluate
+Use a Loss function, take into account => How far it is for $| actual - predicted|$ => L1 Loss
+
+L2 Loss: $(actual - predicted)^{2}$
+
+### Overfitting
+a model that fits too closely, lose great generality.
+
+TO avoid, do some modifications:
+$cost(h) = loss(h) + \lambda complexity(h)$
+
+also measure the complexity, which will kinda avoid the overfit phenonmenon
+### holdout cross-validation
+splitting data into a training set and a test set, such that learning happens on the training set and is evaluated on the test set.
+
+k-fold cross-validation:
+- splitting data into k sets, experimenting k times, using each set as a test set once, and using remaining data as training data.
+### Scikit Learn
+A great way to accelerate your speed to use models.
+
+### Reinforcement learning
+given a set of rewards or punishments, learn what to do and what not to do.
+
+### Markove Decision Process
+model for decision-making.
+- set of states $S$
+- set of actions $ACTIONS(s)$
+- transition model $P(s'|s, a)$
+### Q-Learning
+Learning a function $Q(s, a)$, estimate of the value of performing action $a$ in state $s$
+
+Based on the result, the machine will learn from.
+- start with $Q(s, a) = 0$, for all $s$,$a$
+- when we taken an action and receive a reward
+- - estimate the value of $Q(s, a)$ based on current reward and expected future rewards.
+- - update $Q(s, a)$, take int oaccount old estimate as well as the newer version of estimate
+
+
+$Q(s, a) \leftarrow Q(s, a) + \alpha (new \, value \, estimate - old \, value \, estimate)$
+
+If $\alpha$ is one, this will be a stateless loop. $\alpha $ controls how important the new information is. 
+
+new value estimate: the reward I get, and the reward of future.
+
+$Q(s, a) \leftarrow Q(s, a) + \alpha ((r + \gamma max_{a^{'}} Q(s', a')) - Q(s, a))$
+
+reinforcement learning:
+- 如果AI知道某个路是对的，会形成路径依赖，但可能有更好的其他路，就是懒得探索
+- EXPLORE vs EXPLOIT 的问题
+
+$\epsilon$-greedy:
+- with $1 - \epsilon$, choose the estimated best move
+- with $\epsilon$, choose a random move
+### Unsupervised learning
+given input data without any additional feedback, learn patterns.
+
+Clusterring.
+
+Recentering until we converge:
+- the mean point is steady
+- no more points change their clusters
+
