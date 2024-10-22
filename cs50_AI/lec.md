@@ -294,3 +294,84 @@ Recentering until we converge:
 - the mean point is steady
 - no more points change their clusters
 
+## Lec 5:
+artificaial neural networks: based on the structure and parameters of the network.
+
+using 'units' as neural 'nodes'.
+
+$g(\sum^{n}_{0} w_i x_i + w_0)$
+
+### gradient descent
+Algorithm for minimizing the loss to train the neural network.
+- start with a random choice of weights
+- repeat:
+- - calculate the gradient based on **all data points**: direction that will lead to decreasing loss
+- - update weights according to the gradient
+
+### Multi-layer NN
+with an input layer, an output layer, and at least one hideen layer.
+
+backpropagation: 
+- start with a random choice of weights
+- repeat:
+- - calculate error for output layer
+- - for each layer, starting with output layer, and moving inwards towards ealiest hidden layer
+- - - propagate error back one layer
+- - - update weights
+
+To minimize the total loss.
+### Avoid overfitting
+dropout: randomly remove units, select at random, make the system more robust.
+
+当神经网络的层数变多之后，一般来说它可以处理更加复杂的任务，课程中使用了classifier来做示例。
+
+### computer vision
+Great amount of computations: how to make it practical.
+
+image convolution: filter and extract, take a pixel based on neighbors.
+
+比如某些filter可以在计算时，让图像的边界变得更加明显，能够明显区分两个不同的色块，从而在目标检测上有一些优势。
+
+Pooling: reducing the size of an input bt sampling from regions in the input.
+
+max pooling: choose the maximum value in each region.
+
+convolutional NN: CNN
+- using convolution in NN. Before NN, using convulution methods first.
+
+recurrent NN: fed back into itself
+
+通过多次交互和反馈来逐渐贴近我们的需求
+## Lec 6:
+Formal Grammer is important for NLP, which is a system of rules for generating sentences in a language.
+
+First, define a context-free grammer. 使用ntlk，但是这样需要研究很多语言，这是不经济的。
+
+n-gram: a contiguous sequence of n items.
+
+Feeling and Sense: Naive Bayes.
+
+additive Laplace smoothing: add one to each value in our distribution to avoid 0 cases.
+
+后面的word2vec的知识，似乎是在做LLM Sidechannel的时候学习了的。
+
+有趣的地方：
+```
+closest((king - man) + woman) = queen
+```
+这种东西很适合做翻译，毕竟它更加注重词与词之间的关联。
+
+encoder and decoder: Encode the input to get the hidden state.
+
+### Attention
+decide which value and hidden state counts more.
+
+When decoding, which input should be paid more attentions to?
+### Transformers
+process each input word in parallel and independently.
+
+Add the positional encoding, therefore it captures more info.
+
+Add self-attention (always use multiple self-attentions to get other words info and context info, get info that is useful)
+
+In decoder, we will add encoded representations for references to generate next output word.
