@@ -50,3 +50,25 @@ likelihood: 我们当前的样本是固定的，但是我们需要计算当前�
 牛顿法本来是用来求零点的，现在可以用牛顿法来找极值。
 
 这边提到了海森矩阵，查阅资料就可以用了，其实应该是数学分析中不算太难的东西。
+## Lec 5
+### perceptron
+Learn it for historical reasons.
+
+感觉利用了向量相加后的几何直觉，当引入新的变量X之后，需要对theta做新的调整。
+### Exponential Family
+$p(y;\eta) = b(y) exp(\eta^T T(y) - a(\eta))$
+- $\eta$: natural parameter
+- $T(y)$: sufficient statistic
+- $a(\eta)$: log partition function
+
+伯努利分布和高斯分布似乎都可以用这个来进行描述
+### Properties
+Exponential Family has some properties studied before.
+
+e.g. Expectations, variance.
+
+See in MIT 6.041
+### GLM: generalized linear model
+Real - Gaussian, Binary - Bernouli, Count - Poisson, R+ - Gamma
+
+这一部分的Lecture我似乎没有听得特别懂，明天继续复习一次。
