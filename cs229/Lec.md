@@ -67,8 +67,26 @@ Exponential Family has some properties studied before.
 
 e.g. Expectations, variance.
 
+1. MLE expect $\eta$ => concave (国外对于凹凸的定义和我们相反，从上面还是从下面看)
+2. $E[y;\eta] = \frac{\partial}{\partial \eta}a(\eta)$
+3. $Var[y;\eta] = \frac{\partial^2}{\partial \eta^2}a(\eta)$
 See in MIT 6.041
 ### GLM: generalized linear model
 Real - Gaussian, Binary - Bernouli, Count - Poisson, R+ - Gamma
 
 这一部分的Lecture我似乎没有听得特别懂，明天继续复习一次。
+
+Assumptions:
+- $y|x;\theta$ ~ Exponential Family($\eta$)
+- $\eta = \theta^T x$
+- Test Time: output $E[y|x;\theta]$ => $h_\theta (x) = E[y|x; \theta]$
+
+理解起来可能就是：根据需要的任务，选择合适的线性模型，而这些线性模型的参数我们可以根据模型类型事先就确定了（根据统计意义）。
+
+### Softmax Regression
+首先利用多个分类器$\theta^Tx$来做，得到指标，之后做exp处理，再做`normalization`，可以视作一种`Softmax`的方式。
+
+第二次去听lecture发现印度小哥讲的形象又生动，真好！
+
+### Cross Entroy
+似乎借用了交叉熵的定义来介绍某种gradient descent，与GLM应该是殊途同归的。
