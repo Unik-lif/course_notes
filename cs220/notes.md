@@ -14,6 +14,11 @@ Rust benefits of Modern language:
 
 - `or_insert_with` and `as_mut` is a very good tool.
 
+- Unit Tests: test each unit of code in isolation from the rest of the code to quickly pinpoint where code is and isn't working as expected.
+
+- #[cfg(test)]: only run the test code when running cargo test.
+
+- In Rust test, we can testing private functions.
 ## Progress:
 assignment 1/2: done in 2024/09/14
 assignment 3: done in 2024/11/02 => A little hard.
