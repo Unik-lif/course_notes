@@ -24,6 +24,8 @@ binit(void)
 ```
 效果图：
 ```
+bcache整体：
+
 ========    next               next
 |      | ----------> ====== ----------> ======
 | head |             | b0 |             | b1 | .... 
@@ -33,7 +35,7 @@ binit(void)
 研究一下基本单元 buf 的信息：
 ```C
 struct buf {
-  int valid;   // has data been read from disk? 其实就是说这个 buf 是否本身是对 disk 内信息的一个备份
+  int valid;   // has data been read from disk? 其实就是说这个 buf 是否在 disk 中有同样的信息，也就是内存和缓存是否同步
   int disk;    // does disk "own" buf? 其实就是说 buf 是否已经把信息传送回给 disk
   uint dev;
   uint blockno;
@@ -67,6 +69,7 @@ bread(uint dev, uint blockno)
 void
 bwrite(struct buf *b)
 {
+  // 当前进程是否持有这个b的锁？
   if(!holdingsleep(&b->lock))
     panic("bwrite");
   // 要把 b 的内容拿去写回到 virtio_disk 之中
@@ -112,6 +115,7 @@ bget(uint dev, uint blockno)
       b->refcnt = 1;
       // 为什么 bcache.lock 要在对于 b 进行了操作之后再释放？
       // 因为 bcache 的真实目的其实是为了保证最多每个 sector （由 blockno 对应）只有一个 cached buffer
+      // 把检查和操作放在一起，作为一个完整的原子操作
       release(&bcache.lock);
       // b->refcnt >= 1 并且 b->lock 被加了锁，说明该 buf 单元处于忙碌的状态
       // b->lock 并没有特别大的同步需求，其主要还是为了实现对 buf 内容的保存
@@ -127,6 +131,7 @@ bget(uint dev, uint blockno)
 void
 brelse(struct buf *b)
 {
+  // 检查一开始acquiresleep的是否就是这个进程
   if(!holdingsleep(&b->lock))
     panic("brelse");
   // b->lock 被 holding 时表示该 buf 正在被使用
@@ -137,6 +142,7 @@ brelse(struct buf *b)
   if (b->refcnt == 0) {
     // no one is waiting for it.
     // 遭到 release 的块，将会成为 head 所指向的下一个块
+    // 从原来的链表中直接截取出来，然后放到队列的最前面
     b->next->prev = b->prev;
     b->prev->next = b->next;
     b->next = bcache.head.next;
@@ -150,7 +156,8 @@ brelse(struct buf *b)
 ```
 到这边，为了 Lab 8 所需要的代码分析任务算是完成了。
 
-### 
+### 8.4 Logging Layer
+
 
 
 ## 文件系统代码梳理

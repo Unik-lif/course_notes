@@ -483,6 +483,10 @@ blkn 0
 blkn 11 (for direct block)
 blkn 12: indirect block, point to the indirect number. 对应 256 个块，每个块 ID 的长度为 4 字节
 ```
+文件的读写其实是遵循上面的inode结构，并以此为基础来做更新。因此inode的结构非常重要，可以解释一些读写行为为什么存在。
+
+对于文件的data block，如果文件夹下出现了新的文件，需要在data这边做更新，以更新文件夹自身存储的内容。
+
 因此一个最大文件大小是 268 KB
 ### Directories
 ```      
@@ -531,4 +535,9 @@ commit的行为是原子的，commit本质上是对某一个块进行写，在�
 - begin_op 和 end_op 伴随了系统的全局，以保证我们的文件系统操作是原子的
 - 
 具体细节还是在看书和看代码时再慢慢落实。
+
+### Challenges
+- 如果bcache要满了，不可以驱逐bcache中用于存储log信息的块，（如果要驱逐的话，则说明要从cache直接写回disk）否则将会违反先写log再真实操作disk的规则。如果中途崩溃了，一切就完了，从而破坏了原子性
+- 为了让log能够被完全应用，存放log的空间要足够大，足够大到对全部文件系统里头都做读写这种情况，依旧能够良好地记录相关日志。但更好地方式是，当有较多地请求，把他们放在一起，减少log地数目，从而提高鲁棒性
+- 不可以write data from calls still in a transaction in parallel
 ## Lec 16: More Logging
