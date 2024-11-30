@@ -156,8 +156,216 @@ brelse(struct buf *b)
 ```
 到这边，为了 Lab 8 所需要的代码分析任务算是完成了。
 
-### 8.4 Logging Layer
+### 8.6 Logging Layer
+首先看向begin_op函数：
+```C
+struct log {
+  struct spinlock lock;
+  int start;
+  int size;
+  int outstanding; // how many FS sys calls are executing.
+  int committing;  // in commit(), please wait.
+  int dev;
+  struct logheader lh;
+};
+struct log log;
 
+// called at the start of each FS system call.
+void
+begin_op(void)
+{
+  // 首先获得记录日志的锁
+  acquire(&log.lock);
+  while(1){
+    // 如果还在commiting状态，可能还得等一会儿
+    if(log.committing){
+      // 释放掉log.lock锁，并根据log来作为信号量来睡觉，等待被唤醒
+      sleep(&log, &log.lock);
+      // 超出了当前能用的资源空间
+      // log.lh.n：现有的空间
+      // log.outstanding + 1 如果要再加上一个文件系统调用
+      // MAXOPBLOCKS 每一个文件系统调用所需的最大的空间
+      // 相对保守的分配策略
+    } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
+      // this op might exhaust log space; wait for commit.
+      sleep(&log, &log.lock);
+    } else {
+      // outstanding表示现在有多少个文件系统调用正在被调用
+      log.outstanding += 1;
+      release(&log.lock);
+      break;
+    }
+  }
+}
+```
+保证现在的logging系统并没有在commiting，且现在有足够的log space用来放置当前调用的写操作。
+
+下面分析log_write：
+```C
+// Caller has modified b->data and is done with the buffer.
+// Record the block number and pin in the cache by increasing refcnt.
+// commit()/write_log() will do the disk write.
+//
+// log_write() replaces bwrite(); a typical use is:
+//   bp = bread(...)
+//   modify bp->data[]
+//   log_write(bp)
+//   brelse(bp)
+void
+log_write(struct buf *b)
+{
+  int i;
+
+  if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)
+    panic("too big a transaction");
+  if (log.outstanding < 1)
+    panic("log_write outside of trans");
+
+  acquire(&log.lock);
+  for (i = 0; i < log.lh.n; i++) {
+    // 已经有了就把它放在同一个操作，即absorbation，以节省资源
+    if (log.lh.block[i] == b->blockno)   // log absorbtion
+      break;
+  }
+  log.lh.block[i] = b->blockno;
+  if (i == log.lh.n) {  // Add new block to log?
+    // 增加一个ref，防止被驱逐回去
+    bpin(b);
+    log.lh.n++;
+  }
+  release(&log.lock);
+}
+```
+主要是把b所对应的blockno记录到log之中，并且通过absorbtion，来减少一些资源的消耗。
+
+下面分析end_op：
+```C
+// called at the end of each FS system call.
+// commits if this was the last outstanding operation.
+void
+end_op(void)
+{
+  int do_commit = 0;
+
+  acquire(&log.lock);
+  // 表示某个op要结束了，所以先减少一下outstanding
+  log.outstanding -= 1;
+  if(log.committing)
+    panic("log.committing");
+  if(log.outstanding == 0){
+    // 当所有的outstanding都结束了，是时候该commit了
+    do_commit = 1;
+    log.committing = 1;
+  } else {
+    // 否则，还有其他一些行为没有结束
+    // 但是log.committing是0，原来在begin_op中卡住的行为，现在需要被唤醒了
+    // 一个是log.outstanding导致的空间不够，一个是因为先前log.committing为1时卡住的，一共两种情况
+    // begin_op() may be waiting for log space,
+    // and decrementing log.outstanding has decreased
+    // the amount of reserved space.
+    wakeup(&log);
+  }
+  release(&log.lock);
+
+  if(do_commit){
+    // call commit w/o holding locks, since not allowed
+    // to sleep with locks.
+
+    // 感觉释放也挺有道理的，毕竟在log上的更新已经完成了
+    // 很识趣的是，其实一个变量，也就是committing已经限制了其他的begin_op没法在committing的时候影响我们的commit操作
+    // 所以这边释放是完全可行的
+    commit();
+    acquire(&log.lock);
+    log.committing = 0;
+    wakeup(&log);
+    release(&log.lock);
+  }
+}
+```
+下面需要对commit做更加详细的研究：
+```C
+static void
+commit()
+{
+  // 均建立在log.lh.n大于0的前提上，否则说明log中其实没有存什么东西，没有必要做更新
+  if (log.lh.n > 0) {
+    write_log();     // Write modified blocks from cache to log
+    write_head();    // Write header to disk -- the real commit，真正把header写到disk的步骤，过了这一步后，数据都能恢复了
+    install_trans(0); // Now install writes to home locations
+    log.lh.n = 0;
+    write_head();    // Erase the transaction from the log，用0写，清楚掉无效数据
+  }
+}
+
+// Copy modified blocks from cache to log.
+static void
+write_log(void)
+{
+  int tail;
+
+  for (tail = 0; tail < log.lh.n; tail++) {
+    // 从log.lh.block[tail]这个cache位置，写到log.start+tail+1的位置
+    struct buf *to = bread(log.dev, log.start+tail+1); // log block
+    struct buf *from = bread(log.dev, log.lh.block[tail]); // cache block
+    memmove(to->data, from->data, BSIZE);
+    bwrite(to);  // write the log
+    // 写完了自然释放掉
+    brelse(from);
+    brelse(to);
+  }
+}
+
+// Write in-memory log header to disk.
+// This is the true point at which the
+// current transaction commits.
+static void
+write_head(void)
+{
+  struct buf *buf = bread(log.dev, log.start);
+  struct logheader *hb = (struct logheader *) (buf->data);
+  int i;
+  hb->n = log.lh.n;
+  for (i = 0; i < log.lh.n; i++) {
+    hb->block[i] = log.lh.block[i];
+  }
+  bwrite(buf);
+  brelse(buf);
+}
+
+// Copy committed blocks from log to their home location
+static void
+install_trans(int recovering)
+{
+  int tail;
+
+  for (tail = 0; tail < log.lh.n; tail++) {
+    struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
+    struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
+    memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
+    bwrite(dbuf);  // write dst to disk
+    if(recovering == 0)
+      bunpin(dbuf);
+    brelse(lbuf);
+    brelse(dbuf);
+  }
+}
+```
+继续看recover_from_log函数：
+```C
+static void
+recover_from_log(void)
+{
+  read_head();
+  install_trans(1); // if committed, copy from log to disk
+  log.lh.n = 0;
+  write_head(); // clear the log
+}
+```
+看起来很简单，如果log的header已经弄好了，可以直接从disk读log block到内存中，用来恢复。之后通过install_trans真正地重新做一遍log里头要求我们做的事情。
+
+最后write_head写一个空的，用来清除log。
+
+虽然细节没有彻底搞明白，但是看起来还是挺靠谱的。
 
 
 ## 文件系统代码梳理
