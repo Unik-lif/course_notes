@@ -40,7 +40,7 @@ Idea: get DFS's space advantage with BFS's time / shallow-solution advantages.
 Don't have to store too much in your memory.
 ### Uniform Cost Search
 
-## Lec3:
+## Lec3: A*
 Search Heuristic: 启发式搜索
 
 A function estimate how good this state is, how close the state is to the goal.
@@ -49,3 +49,12 @@ A*: combination of Greedy and UCS.
 
 其实也就是计算现在的Cost，加上对于未来预期的Heuristic Cost，两者相加作为评价指标。
 
+Only Stop when we dequeue a goal.
+
+### Estimate Heruistic Cost
+Maybe the Heruistic function is not so good.
+
+A heuristic `h` is `admissible` (optimistic) if:
+$$0 \le h(n) \le h^{*}(n)$$ 
+
+h^{*}(n) is the true cost to a nearest goal.
