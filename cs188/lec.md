@@ -58,3 +58,19 @@ A heuristic `h` is `admissible` (optimistic) if:
 $$0 \le h(n) \le h^{*}(n)$$ 
 
 h^{*}(n) is the true cost to a nearest goal.
+
+## Lec4: 
+### Graph Search: Never expand a state twice.
+Tree Search + set of expanded states ("closed set")
+
+Important: Store the closed set as a set, not a list.
+
+Some features:
+- Admissibility: $h(A) \le actual cost h^{*} from A to G$ => $A^{*}$ tree search is optimal
+- Consistency: $heuristic "arc" cost \le actual cost for each arc$ => $A^{*}$ graph search is optimal
+
+$$h(A)-h(C) \le cost (A to C)$$
+
+一致性的本质是：只要它说这个方向是对的，那么它的大方向就一定是对的，不会出现大的浮动。就像是指南针，保证自己不会指向北方一样。
+
+### Local Search
