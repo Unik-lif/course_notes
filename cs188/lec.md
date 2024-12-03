@@ -74,3 +74,20 @@ $$h(A)-h(C) \le cost (A to C)$$
 一致性的本质是：只要它说这个方向是对的，那么它的大方向就一定是对的，不会出现大的浮动。就像是指南针，保证自己不会指向北方一样。
 
 ### Local Search
+find configuration satisfying constraints, or find optimal configuration.
+
+In such cases, can use iterative improvement. Keep a single "current" state, and then try to improve it.
+
+Hill climbing:
+- Simple, general idea: move to the best neighboring state
+
+Eight Queen Problems.
+
+### Simulated Annealing
+Learned from CS50-Harvard.
+
+### Beam Search
+Basic Idea:
+- K copies of a local search algorithm, initialized randomly
+
+The searches communicate! That is the best part of this algorithm. => genetic algorithms.
