@@ -91,3 +91,13 @@ Basic Idea:
 - K copies of a local search algorithm, initialized randomly
 
 The searches communicate! That is the best part of this algorithm. => genetic algorithms.
+
+## Lec3+: CSPs
+The goal itself is important, not the path.
+
+### CSPs:
+- standard search problems: State is a black box.
+- a special subset of search problems. Goal test is a set of constraints specifying allowable combinations of values for subsets of variables.
+
+Initial State: Empty, Goal State: all variables have its values.
+### Backtracking Search
