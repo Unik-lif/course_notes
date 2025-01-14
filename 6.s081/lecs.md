@@ -540,4 +540,5 @@ commit的行为是原子的，commit本质上是对某一个块进行写，在�
 - 如果bcache要满了，不可以驱逐bcache中用于存储log信息的块，（如果要驱逐的话，则说明要从cache直接写回disk）否则将会违反先写log再真实操作disk的规则。如果中途崩溃了，一切就完了，从而破坏了原子性
 - 为了让log能够被完全应用，存放log的空间要足够大，足够大到对全部文件系统里头都做读写这种情况，依旧能够良好地记录相关日志。但更好地方式是，当有较多地请求，把他们放在一起，减少log地数目，从而提高鲁棒性
 - 不可以write data from calls still in a transaction in parallel
+
 ## Lec 16: More Logging
