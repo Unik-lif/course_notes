@@ -345,3 +345,101 @@ read_head(void)
 ```
 好像还怪简单的，不过存在脏活，log.lh.block[tail]在非recovering时可能引用次数到了2，因此可能需要用bunpin来修正一下，其他的好像也就那样。
 ### 8.7 Block allocator
+这个部分的章节似乎有点突兀，我们在分析了balloc的基本功能之后，来看看balloc这样的东西是在何种情况下被调用。
+
+可以看到，balloc仅在函数bmap中得到使用：看起来这个函数和inode相关，但到目前，我们尚不清除inode具体的用途，所以我们可以暂时不用管这个，这是又一层高级抽象。
+```C
+// Allocate a zeroed disk block.
+static uint
+balloc(uint dev)
+{
+  int b, bi, m;
+  struct buf *bp;
+
+  bp = 0;
+  // BPB: bitmap per block, every block has 1024 bytes, each bytes has 8 bits, so BPB is 8192.
+  for(b = 0; b < sb.size; b += BPB){
+    // 需要读取bitmap中反映第b个block块是否空闲的这一个bit的信息，就需要以block的粒度把这个bitmap位置对应的整个block读出来
+    // 之后再修改这个bitmap，因为操作必须是以block为单位的，所以这边会稍微麻烦一些
+    // 此外，由于b的步长为BPB，所以相邻的b所对应的block是不一样的
+    
+    // 因此这边是对于每个bitmap块，的每一位这样双重遍历搜索下来
+    bp = bread(dev, BBLOCK(b, sb));
+    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
+      m = 1 << (bi % 8);
+      // 由于存储单位是以8为倍数的，因此得先找到对应的字节，然后再用m去找对应的那一个位，用来确认是否是空的
+      // 确认是空的话，设置为1，就是或上m
+      if((bp->data[bi/8] & m) == 0){  // Is block free?
+        bp->data[bi/8] |= m;  // Mark block in use.
+        // 毕竟对bp做了一些更新，在这边先修改log header，之后在end_op落实下来
+        log_write(bp);
+        brelse(bp);
+        // 对于 b + bi 所对应的 blockno ，记得写它们为0
+        bzero(dev, b + bi);
+        return b + bi;
+      }
+    }
+    brelse(bp);
+  }
+  panic("balloc: out of blocks");
+}
+
+// Free a disk block.
+static void
+bfree(int dev, uint b)
+{
+  struct buf *bp;
+  int bi, m;
+
+  // 反向操作，感觉比较好理解了，这边的 b 就是上面返回的 b + bi
+  bp = bread(dev, BBLOCK(b, sb));
+  bi = b % BPB;
+  m = 1 << (bi % 8);
+  if((bp->data[bi/8] & m) == 0)
+    panic("freeing free block");
+  bp->data[bi/8] &= ~m;
+  // 这边主要还是更新信息哈哈哈哈，修改一下log header，等者在end_op的时候落实下来
+  log_write(bp);
+  brelse(bp);
+}
+```
+疑似这边的balloc是分配了一定的磁盘空间给某个位置，且这一部分空间已经被很好的设置为0了，对应的bitmap也分配出去了。那么，到底是谁或者哪些函数在使用这个功能呢？我们接下来就可以考虑研究一下inode的表现了。
+### 8.8 Inode 层
+立于log层之上的是inode，看起来inode的主要使用是通过balloc和bfree动态分配对应的block空间，在这个过程中通过log_write来调用log相关的接口。
+
+inode的两幅面孔：
+1. 在磁盘中包含文件大小和data block numbers的具体信息，用来保存文件的基本信息（可以视作文件的属性栏）
+2. 在内存中的inode，其包含磁盘中的inode信息，以及内核中与之关联的额外信息
+
+
+第一类inode情况，看起来长得很好看，一共NDIRECT个直接可以连接的data block位置，还有一个位置负责间接连接，这样一来文件的大小可以是很大。
+```C
+// On-disk inode structure
+struct dinode {
+  short type;           // File type
+  short major;          // Major device number (T_DEVICE only)
+  short minor;          // Minor device number (T_DEVICE only)
+  short nlink;          // Number of links to inode in file system
+  uint size;            // Size of file (bytes)
+  uint addrs[NDIRECT+1];   // Data block addresses
+};
+```
+第二类是在memory中的inode，它们相对而言会更加活跃：其中包含这dinode的一部分信息，还有一些dev，inum，ref等额外信息。
+```C
+// in-memory copy of an inode
+struct inode {
+  uint dev;           // Device number
+  uint inum;          // Inode number
+  int ref;            // Reference count，当前有多少活跃的C指针指向它
+  struct sleeplock lock; // protects everything below here
+  int valid;          // inode has been read from disk?
+
+  short type;         // copy of disk inode
+  short major;
+  short minor;
+  short nlink;
+  uint size;
+  uint addrs[NDIRECT+1];
+};
+```
+其中iput和iget分别是把inode信息写回到disk，和从disk读取出来到memory中的两个接口，很自然它们会改变struct inode数据结构的ref数据。
