@@ -443,3 +443,366 @@ struct inode {
 };
 ```
 其中iput和iget分别是把inode信息写回到disk，和从disk读取出来到memory中的两个接口，很自然它们会改变struct inode数据结构的ref数据。
+### 8.9 Inode 代码
+为了分配Inode，我们使用接口ialloc函数：
+```C
+// Allocate an inode on device dev.
+// Mark it as allocated by  giving it type type.
+// Returns an unlocked but allocated and referenced inode.
+// type表示的是，分配的是文件还是一个目录
+struct inode*
+ialloc(uint dev, short type)
+{
+  int inum;
+  struct buf *bp;
+  struct dinode *dip;
+  // 这边从1开始疑似是为了和mkfs这个工具维持一致，或许0的位置是专门为根目录留出来的，当然也存疑
+  for(inum = 1; inum < sb.ninodes; inum++){
+    // 首先确认究竟是哪一个block包含序号为inum的inode
+    bp = bread(dev, IBLOCK(inum, sb));
+    // 找到inum指定的inode结构
+    // 这边看起来是向下顺序分配着的
+    dip = (struct dinode*)bp->data + inum%IPB;
+    if(dip->type == 0){  // a free inode
+      memset(dip, 0, sizeof(*dip));
+      // 希望之后对bp内的dip位置真实做点修改，在log_write把东西写到log_header里，等待end_op更新过来
+      dip->type = type;
+      log_write(bp);   // mark it allocated on the disk
+      brelse(bp);
+      // 继续研究iget的功能
+      // iget这边更像是保证在icache已经有了这个inode的信息，但是确实是unlocked状态的，需要在ilock环节保证信息的合理性
+      return iget(dev, inum);
+    }
+    // 如果type不等于0，说明这个inode已经被分配了类型了，就不需要再次在磁盘block中更新了
+    brelse(bp);
+  }
+  panic("ialloc: no inodes");
+}
+
+// Find the inode with number inum on device dev
+// and return the in-memory copy. Does not lock
+// the inode and does not read it from disk.
+// iget最后似乎会返回一个in-memory的拷贝所对应的指针
+// 不同环节的iget最后返回的指针信息地址信息都是一样的，只不过可以有多个不同的拷贝副本
+// 这也为之后ilock对于inode的exclussive access做了一些准备
+static struct inode*
+iget(uint dev, uint inum)
+{
+  struct inode *ip, *empty;
+
+  acquire(&icache.lock);
+
+  // Is the inode already cached?
+  // 首先检查当前的这个inode是否已经被存放、管理在icache之中了
+  // icache和bcache似乎是不同的机制
+  empty = 0;
+  for(ip = &icache.inode[0]; ip < &icache.inode[NINODE]; ip++){
+    // 这个inode对应的位置，已经在icache中已经存在了
+    // 似乎并不意味着ialloc调用的iget就一定不会进入这个分支，因为总体上可以视作存放dev，inum的位置算是固定的
+    // 对于disk-inode信息，很有可能还没有拷贝进来？
+    if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
+      ip->ref++;
+      release(&icache.lock);
+      return ip;
+    }
+    // 尝试记录第一个empty slot的位置，这个将会分配给新来的
+    // 存在下面说的recycle的可能性
+    if(empty == 0 && ip->ref == 0)    // Remember empty slot.
+      empty = ip;
+  }
+
+  // Recycle an inode cache entry.
+  if(empty == 0)
+    panic("iget: no inodes");
+
+  // 如果在icache中没有我们dev inum位置对应的
+  ip = empty;
+  ip->dev = dev;
+  ip->inum = inum;
+  ip->ref = 1;
+  ip->valid = 0;
+  release(&icache.lock);
+
+  return ip;
+}
+```
+在上面的分配和利用iget在icache中注册，并返回对应的inode pointer的行为很有可能并没有存放除了dev和inum等必要的信息指标，正如ialloc环节所说的，返回的是一个指向unlocked状态的inode。为了让其真正能够发挥功效，我们需要在ilock等函数中，正儿八经地把disk inode的信息拷贝过来给in-memory的inode使用。
+
+为此，我们重点关注一下这边的ilock对应的函数细节：
+```C
+// Lock the given inode.
+// Reads the inode from disk if necessary.
+void
+ilock(struct inode *ip)
+{
+  struct buf *bp;
+  struct dinode *dip;
+
+  if(ip == 0 || ip->ref < 1)
+    panic("ilock");
+  
+  // 把这个inode指针对应的lock从这个时候就一直攥在手上
+  // 其他的inode指针，此时就只能卡在这里睡觉，直到含有ilock的行为自己通过iunlock释放开来
+  acquiresleep(&ip->lock);
+
+  // 其他的数据不可信，但是ip对应的dev和inum是可信的，根据这个足够能够通过bread来找到对应的block pointer了，然后进一步找到inode对应的位置
+  if(ip->valid == 0){
+    bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+    dip = (struct dinode*)bp->data + ip->inum%IPB;
+    // 很基本的拷贝
+    ip->type = dip->type;
+    ip->major = dip->major;
+    ip->minor = dip->minor;
+    ip->nlink = dip->nlink;
+    ip->size = dip->size;
+    memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
+    brelse(bp);
+    ip->valid = 1;
+    if(ip->type == 0)
+      panic("ilock: no type");
+  }
+}
+```
+那么紧接着观察iunlock的情况，这会比较合适：
+```C
+// Unlock the given inode.
+void
+iunlock(struct inode *ip)
+{
+  // holdingsleep: 保证当前进程确实是因为ip->lock锁住的，而且确实和上锁的那个进程是同一个
+  if(ip == 0 || !holdingsleep(&ip->lock) || ip->ref < 1)
+    panic("iunlock");
+
+  releasesleep(&ip->lock);
+}
+```
+与iget对应的操作是iput：
+```C
+// Drop a reference to an in-memory inode.
+// If that was the last reference, the inode cache entry can
+// be recycled.
+// If that was the last reference and the inode has no links
+// to it, free the inode (and its content) on disk.
+// All calls to iput() must be inside a transaction in
+// case it has to free the inode.
+void
+iput(struct inode *ip)
+{
+  acquire(&icache.lock);
+  // 如果当前只有一个引用（毕竟iget和iput是配合使用过的），并且当前甚至还没有文件是使用它这个inode的
+  if(ip->ref == 1 && ip->valid && ip->nlink == 0){
+    // inode has no links and no other references: truncate and free.
+
+    // ip->ref == 1 means no other process can have ip locked,
+    // so this acquiresleep() won't block (or deadlock).
+    acquiresleep(&ip->lock);
+
+    release(&icache.lock);
+
+    // 困惑的地方：为什么不在itrunc这边先别急着iupdate?明明东西还没改完？
+    // 可能是为了代码的维护性更好吧？
+    itrunc(ip);
+    ip->type = 0;
+    iupdate(ip);
+    // 这个是in-memory的ip特有的，不需要更新到disk中去
+    ip->valid = 0;
+
+    releasesleep(&ip->lock);
+
+    acquire(&icache.lock);
+  }
+
+  ip->ref--;
+  release(&icache.lock);
+}
+
+// Truncate inode (discard contents).
+// Caller must hold ip->lock.
+// 既然没有人需要这个inode了，那么inode对应的文件内容也可以删除掉了
+void
+itrunc(struct inode *ip)
+{
+  int i, j;
+  struct buf *bp;
+  uint *a;
+  // 看起来就是通过bfree的接口来把信息清除掉，先清除的是NDIRECT部分
+  for(i = 0; i < NDIRECT; i++){
+    if(ip->addrs[i]){
+      bfree(ip->dev, ip->addrs[i]);
+      ip->addrs[i] = 0;
+    }
+  }
+  // 查看在indirect这边是否有需要被清除掉的
+  if(ip->addrs[NDIRECT]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT]);
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j])
+        bfree(ip->dev, a[j]);
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT]);
+    ip->addrs[NDIRECT] = 0;
+  }
+
+  ip->size = 0;
+  iupdate(ip);
+}
+
+// Copy a modified in-memory inode to disk.
+// Must be called after every change to an ip->xxx field
+// that lives on disk, since i-node cache is write-through.
+// Caller must hold ip->lock.
+// 需要动底下的信息，包括icache部分，全部都要改
+void
+iupdate(struct inode *ip)
+{
+  struct buf *bp;
+  struct dinode *dip;
+
+  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+  dip = (struct dinode*)bp->data + ip->inum%IPB;
+  dip->type = ip->type;
+  dip->major = ip->major;
+  dip->minor = ip->minor;
+  dip->nlink = ip->nlink;
+  dip->size = ip->size;
+  memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+  log_write(bp);
+  // 既然对bp做了一些修改，那么现在还是像以前一样落实
+  brelse(bp);
+}
+```
+到这里就基本把inode梳理完了，看起来还是比较清楚的。
+### 8.10 inode 内容
+inode通过addrs来存放自身内容，其中12个是直接连接的data block块位置，剩下一个是间接的连接data block块位置。对于间接连接，其通过一整个block来存储更多地址，因此正好有1024个字节，所以有256个data block地址可以存放其中。
+
+我们首先对bmap来进行解读：
+```C
+// Return the disk block address of the nth block in inode ip.
+// If there is no such block, bmap allocates one.
+static uint
+bmap(struct inode *ip, uint bn)
+{
+  uint addr, *a;
+  struct buf *bp;
+
+  // bn 表示当前还是为空的那个block的序号
+  // 如果 bn 要小于NDIRECT的话，就按照直接连接的方式来做就可以了
+  if(bn < NDIRECT){
+    if((addr = ip->addrs[bn]) == 0)
+      ip->addrs[bn] = addr = balloc(ip->dev);
+    return addr;
+  }
+  // 如果 bn 的数要大于NDIRECT，就可以走下面这条路
+  bn -= NDIRECT;
+
+  if(bn < NINDIRECT){
+    // Load indirect block, allocating if necessary.
+    if((addr = ip->addrs[NDIRECT]) == 0)
+      // 首先为INDIRECT分配一个块，之后则根据bn的值，在INDIRECT后再连接对应的数据块
+      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+    // bp对应的是INDIRECT块，对其内容做解析
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    // bn对应的位置如果恰好没有被分配，则分配一下就好了
+    // 对bp这个块做了修改，因此需要log_write写一次
+    if((addr = a[bn]) == 0){
+      a[bn] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
+  
+  // 就大小上不能超过INDIRCT + NDIRCT
+  panic("bmap: out of range");
+}
+```
+到这一步已经很接近更上面的文件系统了，尤其是考虑到bmap是为readi和writei服务的这一点，我们查看一下这两个函数的情况：
+```C
+// Read data from inode.
+// Caller must hold ip->lock.
+// If user_dst==1, then dst is a user virtual address;
+// otherwise, dst is a kernel address.
+int
+readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
+{
+  uint tot, m;
+  struct buf *bp;
+
+  // off 表示起始位置，n 表示向下读的字节数目，不能超过下面的范围，感觉很正常
+  // 自然，n 不可以是负数
+  if(off > ip->size || off + n < off)
+    return 0;
+  // 如果 n 可能会导致读到最后，那么就读到最后，不要超过文件的总大小
+  if(off + n > ip->size)
+    n = ip->size - off;
+
+  // 反正就是全部读完呗
+  for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
+    // ip 表示要读取的 inode pointer
+    // 我们首先找到 inode content 的起始位置
+    // 可以根据 bmap 来轻松找到 off 对应的起始 data block 位置，会返回一个地址号，直接读取就可以了
+    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    // 这表示的应该是在一个 block 内，我们要读的字节数
+    m = min(n - tot, BSIZE - off%BSIZE);
+    // 总之就是修改了 dst 的信息，但是 dst 是在内存上的，所以不影响
+    // 如果返回的是 -1，则失败了，得退出来
+    if(either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
+      brelse(bp);
+      tot = -1;
+      break;
+    }
+    // 对于 bp 并没有做改动，但是现在我们不需要了，所以完全可以 release
+    brelse(bp);
+  }
+  return tot;
+}
+
+// Write data to inode.
+// Caller must hold ip->lock.
+// If user_src==1, then src is a user virtual address;
+// otherwise, src is a kernel address.
+// Returns the number of bytes successfully written.
+// If the return value is less than the requested n,
+// there was an error of some kind.
+int
+writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
+{
+  uint tot, m;
+  struct buf *bp;
+
+  // 经典检查
+  if(off > ip->size || off + n < off)
+    return -1;
+  // 不能写的超过了可以存储的范畴，最大范畴就是MAXFILE * BSIZE
+  // 而MAXFILE的大小则是经典的直接连接和间接连接的的 data block
+  if(off + n > MAXFILE*BSIZE)
+    return -1;
+
+  for(tot=0; tot<n; tot+=m, off+=m, src+=m){
+    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    m = min(n - tot, BSIZE - off%BSIZE);
+    // 到这里其实还都是一样的
+    if(either_copyin(bp->data + (off % BSIZE), user_src, src, m) == -1) {
+      brelse(bp);
+      break;
+    }
+    // 但是要写到bp里头，bp对应的disk，不是内存，所以要在log_write里头更新
+    log_write(bp);
+    brelse(bp);
+  }
+  // 需要更新ip->size大小，off在之后会不停地加
+  if(off > ip->size)
+    ip->size = off;
+
+  // write the i-node back to disk even if the size didn't change
+  // because the loop above might have called bmap() and added a new
+  // block to ip->addrs[].
+  iupdate(ip);
+
+  return tot;
+}
+```
+这俩感觉还是比较好理解的。到现在，我们应该只差最上头的pathname，以及filedescriptor相关的东西，应该明天肯定能够完结这个令人头秃的章节了。
