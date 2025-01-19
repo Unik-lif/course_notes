@@ -891,3 +891,78 @@ dirlink(struct inode *dp, char *name, uint inum)
 }
 ```
 看起来还是很好理解的，只要慢慢读代码，一切都会好起来的。
+### 8.12 Path Names
+我们先前已经可以通过directory来包装了，那么下一步就是文件路径的封装。本质上，文件路径就是对于每一层都调用一次dirlookup，感觉挺真实的。
+
+处在路径检索核心的是下面这两个函数：
+```C
+// 本质上都是对path的简单解析工作
+struct inode*
+namei(char *path)
+{
+  char name[DIRSIZ];
+  return namex(path, 0, name);
+}
+
+struct inode*
+nameiparent(char *path, char *name)
+{
+  return namex(path, 1, name);
+}
+
+// Look up and return the inode for a path name.
+// If parent != 0, return the inode for the parent and copy the final
+// path element into name, which must have room for DIRSIZ bytes.
+// Must be called inside a transaction since it calls iput().
+static struct inode*
+namex(char *path, int nameiparent, char *name)
+{
+  struct inode *ip, *next;
+  // 这个是根目录，直接走向ROOTINO就好了
+  if(*path == '/')
+    ip = iget(ROOTDEV, ROOTINO);
+  else
+    // 否则，则为当前进程所在的目录对应的inode，增加一次引用
+    // 这个对应的inode应该是根上的inode吧？
+    ip = idup(myproc()->cwd);
+
+  // 逐个向下走，path表示儿子和孙子，name表示父亲目录
+  while((path = skipelem(path, name)) != 0){
+    // 读当前ip对应的inode，以方便向下锁定path
+    ilock(ip);
+    // 类型肯定得是T_DIR啊，不然这辈子有了
+    if(ip->type != T_DIR){
+      iunlockput(ip);
+      return 0;
+    }
+    // nameiparent要么是1,要么是0,如果是1,并且路径啥都没写
+    // nameiparent负责返回最后一个元素的父亲目录
+    // 遍历到path为空的情况下，也就是path中不存在父亲目录了
+    // nameiparent为1,则返回父亲目录，恰好是这个ip
+    if(nameiparent && *path == '\0'){
+      // Stop one level early.
+      iunlock(ip);
+      return ip;
+    }
+    // next表示的是通过dirlookup找到在name下，儿子目录对应的inode
+    // 返回0说明找不到
+    if((next = dirlookup(ip, name, 0)) == 0){
+      iunlockput(ip);
+      return 0;
+    }
+    // 发现ip始终是考虑向下遍历的
+    iunlockput(ip);
+    // 现在ip指向儿子目录了
+    ip = next;
+  }
+  // 感觉这是不应该涉足的地方，毕竟前面有啊，有一定概率是路径出现错误了
+  // 什么错搞不清楚，前面明明有类似分支啊。。。
+  // 这种情况确实应该返回0倒是
+  if(nameiparent){
+    iput(ip);
+    return 0;
+  }
+  // 按照常理，应该正好读到一个文件，当然是在nameiparent为0的情况下，为1的情况在前面被覆盖了。
+  return ip;
+}
+```
