@@ -806,3 +806,88 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 }
 ```
 这俩感觉还是比较好理解的。到现在，我们应该只差最上头的pathname，以及filedescriptor相关的东西，应该明天肯定能够完结这个令人头秃的章节了。
+### 8.11 Directory Layer
+文件夹类型层，本身自然也是一个文件。它对应的inode是T_DIR类型，并且其对应的data block存放着各个entries的名称。其中，dirent的类型如下所示：
+```C
+// Directory is a file containing a sequence of dirent structures.
+#define DIRSIZ 14
+
+struct dirent {
+  ushort inum;
+  char name[DIRSIZ];
+};
+```
+每一个dirent中包含一个自身inode对应的号，以及自己的名字，一共占据16个字节。为了对这些directory进行检索，我们需要调用一些文件接口：
+```C
+// Look for a directory entry in a directory.
+// If found, set *poff to byte offset of entry.
+// 返回dirent下某个含有name作为文件名对应的inode，以及返回其在父文件夹下的偏移地址
+struct inode*
+dirlookup(struct inode *dp, char *name, uint *poff)
+{
+  uint off, inum;
+  struct dirent de;
+
+  // 首先保证 dp->type 的类型是T_DIR
+  if(dp->type != T_DIR)
+    panic("dirlookup not DIR");
+  // 对当前这个 dirent 的数据块们（也就是自动从addrs部分开始）进行遍历，为此我们需要调用readi来帮助我们，这就是玩抽象的好处
+  for(off = 0; off < dp->size; off += sizeof(de)){
+    if(readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+      panic("dirlookup read");
+    // 读到的这个dirent entry对应的inum为0，那应该就是还没初始化，因为inum的号应该是从1开始的
+    if(de.inum == 0)
+      continue;
+    // 看看名字是否是相符的
+    if(namecmp(name, de.name) == 0){
+      // entry matches path element
+      // 如果存在返回地址的需求，那就返回offset呗
+      if(poff)
+        *poff = off;
+      inum = de.inum;
+      // 这是经典inode获取的起手式
+      return iget(dp->dev, inum);
+    }
+  }
+
+  return 0;
+}
+```
+书本中说，这个函数的行为促使了iget返回的是一个unlocked的inode。原因在于，调用dirlookup的时候，由于访问了dp的数据，一般往往是需要通过ilock方式锁定dp的（读取inode信息就是需要先给他上锁，不然连磁盘中的数据信息都同步不过来，像这边就需要磁盘中的数据信息），因此为了防止可能出现的重复上锁，也就是访问文件"."时重复上锁了，这边自然需要做到一个unlocked状态。
+
+而dirlookup似乎被dirlink高强度调用了，dirlink主要的工作是，把一个给定的名称和inode number作为信息，生成一个新的dirent entry，写到directory对应的数据中。
+```C
+// Write a new directory entry (name, inum) into the directory dp.
+int
+dirlink(struct inode *dp, char *name, uint inum)
+{
+  int off;
+  struct dirent de;
+  struct inode *ip;
+
+  // Check that name is not present.
+  // 通过lookup方式检查是否已经存在了，如果不为0就说明已经存在，我们可以把ip送回去，因为读出来的时候已经有iget这个操作了，要逆操作一下
+  if((ip = dirlookup(dp, name, 0)) != 0){
+    iput(ip);
+    return -1;
+  }
+
+  // Look for an empty dirent.
+  // 老方法找到一个空的inode位置，这样我们可以把新的信息，name和inum写进去
+  for(off = 0; off < dp->size; off += sizeof(de)){
+    if(readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+      panic("dirlink read");
+    if(de.inum == 0)
+      break;
+  }
+  // 很经典地准备写进去，现在暂时先存放到de中
+  strncpy(de.name, name, DIRSIZ);
+  de.inum = inum;
+  // 那我问你？你现在新的entry只是在这个函数中临时有效，你觉得是不是需要写到父文件夹的data block位置呢？
+  if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+    panic("dirlink");
+
+  return 0;
+}
+```
+看起来还是很好理解的，只要慢慢读代码，一切都会好起来的。
