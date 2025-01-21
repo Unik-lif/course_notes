@@ -966,3 +966,318 @@ namex(char *path, int nameiparent, char *name)
   return ip;
 }
 ```
+### 8.13 File Descriptor Layer
+相较于path来说，我们可以通过更加抽象的File Descriptor Layer来尝试描述这件事情。FD可以用于描述文件，console，和很多东西，是一个相对通用的东西。
+```C
+// Allocate a file structure.
+struct file*
+filealloc(void)
+{
+  struct file *f;
+
+  acquire(&ftable.lock);
+  // 以file作为粒度向下进行扫描，这边是逐个文件的扫描
+  for(f = ftable.file; f < ftable.file + NFILE; f++){
+    // 找一个还没有用上的
+    if(f->ref == 0){
+      f->ref = 1;
+      release(&ftable.lock);
+      return f;
+    }
+  }
+  // 满了，没法分配
+  release(&ftable.lock);
+  return 0;
+}
+
+// Increment ref count for file f.
+struct file*
+filedup(struct file *f)
+{
+  acquire(&ftable.lock);
+  if(f->ref < 1)
+    panic("filedup");
+  f->ref++;
+  release(&ftable.lock);
+  return f;
+}
+
+// Close file f.  (Decrement ref count, close when reaches 0.)
+void
+fileclose(struct file *f)
+{
+  struct file ff;
+
+  acquire(&ftable.lock);
+  // 尝试关掉一个file对应的file descriptor
+  if(f->ref < 1)
+    panic("fileclose");
+  if(--f->ref > 0){
+    release(&ftable.lock);
+    return;
+  }
+  // 如果此时f->ref已经可以被减小到0了
+  // 先把原来用的这个f的信息拷贝到ff之中
+  ff = *f;
+  f->ref = 0;
+  f->type = FD_NONE;
+  release(&ftable.lock);
+
+  // 如果原来的ff对应的类型是FD_PIPE
+  if(ff.type == FD_PIPE){
+    // 那说明我们应该以关闭PIPE的方式来关闭它
+    pipeclose(ff.pipe, ff.writable);
+  } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){
+    // 否则，则是持久性缓存类型的文件
+    // 这说明在关闭文件之前，我们确实已经对f->ref做了修改，改成了0，而这个信息需要同步到磁盘之中
+    begin_op();
+    iput(ff.ip);
+    end_op();
+  }
+}
+```
+通过filealloc来对存储了全局fd信息的ftable进行扫描，行为模式非常简单。filedup好像只是增加了某个file descriptor的引用数目。fileclose的功能亦非常清楚简单。
+```C
+// 感觉这个filestat非常合理
+// 仅支持会存放在磁盘中的inode结构来进行操作，如果类型不是FD_INODE或者FD_DEVICE就不行了
+// Get metadata about file f.
+// addr is a user virtual address, pointing to a struct stat.
+int
+filestat(struct file *f, uint64 addr)
+{
+  struct proc *p = myproc();
+  struct stat st;
+  
+  if(f->type == FD_INODE || f->type == FD_DEVICE){
+    ilock(f->ip);
+    stati(f->ip, &st);
+    iunlock(f->ip);
+    if(copyout(p->pagetable, addr, (char *)&st, sizeof(st)) < 0)
+      return -1;
+    return 0;
+  }
+  return -1;
+}
+// Read from file f.
+// addr is a user virtual address.
+int
+fileread(struct file *f, uint64 addr, int n)
+{
+  int r = 0;
+
+  // 检查这个文件是否可读
+  if(f->readable == 0)
+    return -1;
+
+  // 检查文件类型是否为PIPE类型
+  if(f->type == FD_PIPE){
+    // pipe有自己的一套读法
+    r = piperead(f->pipe, addr, n);
+  } else if(f->type == FD_DEVICE){
+    // 设备也有自己的一套读法
+    if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
+      return -1;
+    r = devsw[f->major].read(1, addr, n);
+  } else if(f->type == FD_INODE){
+    // inode 的读法：先从disk中读出来inode信息，之后利用readi来读信息到addr指定的位置
+    ilock(f->ip);
+    // r 是真正读取的字节数目
+    if((r = readi(f->ip, 1, addr, f->off, n)) > 0)
+      f->off += r;
+    iunlock(f->ip);
+  } else {
+    panic("fileread");
+  }
+
+  return r;
+}
+
+// Write to file f.
+// addr is a user virtual address.
+int
+filewrite(struct file *f, uint64 addr, int n)
+{
+  int r, ret = 0;
+
+  if(f->writable == 0)
+    return -1;
+
+  if(f->type == FD_PIPE){
+    ret = pipewrite(f->pipe, addr, n);
+  } else if(f->type == FD_DEVICE){
+    if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write)
+      return -1;
+    ret = devsw[f->major].write(1, addr, n);
+  } else if(f->type == FD_INODE){
+    // write a few blocks at a time to avoid exceeding
+    // the maximum log transaction size, including
+    // i-node, indirect block, allocation blocks,
+    // and 2 blocks of slop for non-aligned writes.
+    // this really belongs lower down, since writei()
+    // might be writing a device like the console.
+    // 这边除2确实是有一点奇怪，
+    int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+    int i = 0;
+    while(i < n){
+      int n1 = n - i;
+      if(n1 > max)
+        n1 = max;
+
+      begin_op();
+      ilock(f->ip);
+      if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0)
+        f->off += r;
+      iunlock(f->ip);
+      end_op();
+
+      if(r != n1){
+        // error from writei
+        break;
+      }
+      i += r;
+    }
+    ret = (i == n ? n : -1);
+  } else {
+    panic("filewrite");
+  }
+
+  return ret;
+}
+```
+上面的filestat功能还是非常合理的，我们主要看下面两个函数。可能比较奇怪的是这边的`int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;`设置，其他地方看起来还是非常自然的。
+### 8.14 system calls
+有了上面这么多种类的文件操作之后，我们最后将其部署到system calls上。
+```C
+// Create the path new as a link to the same inode as old.
+uint64
+sys_link(void)
+{
+  char name[DIRSIZ], new[MAXPATH], old[MAXPATH];
+  struct inode *dp, *ip;
+
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  // 先找到 old 所对应的 ip，本质上是根据文件名，找到文件所对应的 inode
+  if((ip = namei(old)) == 0){
+    end_op();
+    return -1;
+  }
+
+  ilock(ip);
+  // 这个 inode 需要是一个文件，而不是文件夹
+  if(ip->type == T_DIR){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  // 因为多了一个文件名来引用这个inode，所以需要增加 ip->nlink
+  ip->nlink++;
+  // 把这个信息更新到disk inode里去
+  iupdate(ip);
+  iunlock(ip);
+
+  // 根据路径，找到对应的新文件所在的文件夹
+  // 这必须得能找到
+  if((dp = nameiparent(new, name)) == 0)
+    goto bad;
+  // 要对父亲文件夹做一点修改，所以需要ilock一下
+  ilock(dp);
+  // 如果父亲文件夹所用的设备和 ip->dev 是不同的，那这个inode并不能link上，因为设备是不一样的
+  // 第二种情况便是，这个name已经有具体的文件名了，但是没有办法在dp上连接上，也就是父文件夹没法建立和这个新link建立的文件之间的关联
+  if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
+    iunlockput(dp);
+    goto bad;
+  }
+  // 感觉是为了省事
+  iunlockput(dp);
+  // ip自然也得更新上
+  iput(ip);
+
+  // 范式
+  end_op();
+
+  return 0;
+
+bad:
+  // 失败了，先前加了，那么现在就减去 
+  ilock(ip);
+  ip->nlink--;
+  iupdate(ip);
+  iunlockput(ip);
+  end_op();
+  return -1;
+}
+
+
+uint64
+sys_unlink(void)
+{
+  struct inode *ip, *dp;
+  struct dirent de;
+  char name[DIRSIZ], path[MAXPATH];
+  uint off;
+
+  // 自然还是先找到路径位置
+  if(argstr(0, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  // 先找爸爸文件夹
+  if((dp = nameiparent(path, name)) == 0){
+    end_op();
+    return -1;
+  }
+
+  ilock(dp);
+
+  // Cannot unlink "." or "..".
+  // 这俩不能删掉的
+  if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
+    goto bad;
+
+  // 先找name是否存在，不存在那没办法unlink
+  if((ip = dirlookup(dp, name, &off)) == 0)
+    goto bad;
+  ilock(ip);
+
+  // 找到了底下的inode，但是它nlink小于1，说明要么错了，要么没有文件和这个inode进行连接
+  if(ip->nlink < 1)
+    panic("unlink: nlink < 1");
+  // 是文件夹还能unlink取消，但是如果文件夹非空，对于unlink的要求太高了，因为要遍历，这并不好
+  if(ip->type == T_DIR && !isdirempty(ip)){
+    iunlockput(ip);
+    goto bad;
+  }
+
+  memset(&de, 0, sizeof(de));
+  // 利用先前找到的off，以及父亲文件夹用的dp，把0作为信息写到dp的data block部位，表示从文件夹索引的directory entry删掉了
+  // 这要是还失败，那这辈子有了
+  if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+    panic("unlink: writei");
+  // 如果是这样，就不太需要考虑dp了，可以考虑ip的情况
+  if(ip->type == T_DIR){
+    dp->nlink--;
+    iupdate(dp);
+  }
+  iunlockput(dp);
+
+  ip->nlink--;
+  iupdate(ip);
+  iunlockput(ip);
+
+  end_op();
+
+  return 0;
+
+bad:
+  iunlockput(dp);
+  end_op();
+  return -1;
+}
+```
+
+### 结语
+到这里，我们对于filesystem的解读工作可以算是完成了。
