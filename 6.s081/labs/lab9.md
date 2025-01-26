@@ -17,7 +17,7 @@ Symbolic links (or soft links) refer to a linked file by pathname; when a symbol
 
 先前对于文件系统的解读，似乎还不够，需要加上最后这一部分，用来帮助我们完成实验的第二部分。
 
-### 基本解读
+#### 基本解读
 首先我们看sys_link这个系统调用，以及sys_unlink系统调用。
 ```C
 // Create the path new as a link to the same inode as old.
@@ -271,3 +271,37 @@ sys_open(void)
 }
 ```
 到这里应该解析就已经结束了。
+
+#### 实验思路
+首先根据sys_link的一些代码思路，确认寻找target，以及path的方式，确保这些部分的inode已经被我更新弄了过来。
+
+然而，注意到inode并非真实落实到文件路径中去，因此我们需要仿照sys_open的方式，尝试创建一个文件出来，用来满足我们的需求。
+
+感觉主要梳理到这一步，就足够了。这一章其实也蛮难的，尤其是考虑巨量的代码阅读工作量上，感觉远远要比rCore的要踏实呢。
+
+但有个问题，对于symbolic links的认知，需要查阅资料：
+
+查阅资料发现，symbolic link本质上是一个新的inode，它里头将会包含一个string，其中包含着它所指向的对应的某个文件或者路径。
+
+因此，对于symbolic link，我们要为其创建一个新的inode。
+
+最后我大概花了两三天时间才把这个实验搞定。我其实觉得就思考的难度和做起来调试的困难度来看，这个可能是HARD难度的。
+
+一些值得注意的点：
+1. INODE相关的细节非常的复杂，需要仔细阅读书本理解清楚。
+2. 针对ilock和iunlock方式，需要维持好数目，防止过度引用，从而导致icache被使用殆尽，却没有空余的icache可以被得到释放。
+3. SYMBOLIC本身就是一个inode需要占用，然后在上锁的时候的顺序容易搞错，一定要incremental着做，否则就可能和我一样，被迫重构一次，才破而后立。
+
+其他的应该不是太困难了，慢慢折腾，肯定是能做出来的，下面是实验的评分结果：
+```
+== Test running bigfile == running bigfile: OK (87.4s)
+== Test running symlinktest == (0.9s)
+== Test   symlinktest: symlinks ==
+  symlinktest: symlinks: OK
+== Test   symlinktest: concurrent symlinks ==
+  symlinktest: concurrent symlinks: OK
+== Test usertests == usertests: OK (154.1s)
+== Test time ==
+time: OK
+Score: 100/100
+```
