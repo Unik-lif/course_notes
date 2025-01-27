@@ -547,3 +547,65 @@ commit的行为是原子的，commit本质上是对某一个块进行写，在�
 
 在transcation中，对于系统调用做排序是很重要的。
 ## Lec 16: More Logging
+log = journal, ext3 = ext2 + journal
+
+xv6 log review
+
+为什么linux不用xv6相同的方案？主要原因还是，xv6的logging方案太慢了，每一个syscall都要经过一个完整的拷贝到logging block中的过程，耗时巨大。
+### Ext 3
+实际上对于底层的EXT 2系统做的改动非常小。 
+ 
+Ext3将会维持transcation info信息：
+1. 事物修改的序列信息，以及block号
+2. handles
+
+在磁盘的特定位置，同样维持一个LOG信息。EXT3的特性在于，其能够同时追踪多个事务。
+
+基本的结构superblock：
+- 首先有一个log superblock中包含superblock内的第一个有效事务的偏移量和对应的序列号
+- 之后的每一个transacation中都包含着一些描述块
+- 最后，还可能有多个commit block作为完结数据
+
+以一个环形链表的方式来组织
+### 性能提高手段
+1. 系统调用只是更新内存缓存块中的内容，便可以返回，并不需要经过IO操作
+2. Batching操作
+3. Concurrency
+
+#### 系统调用的异步性：
+只是修改缓存中的块，并没有涉及磁盘上的写。这让我们可以在后续实现IO的concurrency，可以避免程序执行和IO操作的重叠。此外，这也让batching操作变得更加容易。但是，即便系统调用成功返回了，这也不意味着我们的系统调用真的落实下来了。
+
+为了避免上面的问题，现在有了一个不错的程序接口，叫做fsync，可以让系统调用对于文件的操作能够真实的同步到磁盘中，和flush很像。
+#### Batching的好处
+在EXT3中总是有一个open transcation事务，在这之后，系统调用们他们写入的都是这个大的transcation的一部分，这摊销了很多需要多次在机器驱动上写的成本。同时，和xv6的系统一样，batching也支持我们absorbtion，可以明显减少我们写入的次数。
+
+此外，还有一个好处是disk scheduling。如果有大批量的写的话，可以让磁盘的利用率更加高，能够更早地完成应该完成的任务。
+#### Concurrency
+1. 允许多个syscall的并行。彼此之间并不需要有依赖时间关系。因为修改的都是一个单独的一个区域。
+2. 很多老的事情都可以同时并行存在，它们可能都是存在于不同的生命周期中。
+
+### 真实代码：
+在start的时候，提供一个句柄h，作为一个事务作用的单元。然后，对于块操作，需要把h和这些blocks的关系绑定在一起。
+
+在commit的步骤如下：
+1. block new system calls
+2. wait for outstanding syscalls (write to cache)
+3. open new transcation
+4. write description block and related data  blocks
+5. write blocks to log
+6. wait for finishing
+7. write commit block
+8. wait for commit write finish (reach the 'commit point', guarantee the modification is now safe)
+9. write to home locations (a little long)
+10. re-use log
+### 恢复
+每个transacation会留下来description block，留一个magic number之类的值，用来让恢复软件知道，崩溃是从哪一个事件位置开始的。
+
+但是在xv6中，并没有这个多个transcation的机制，只有一个事务。因此并发性在xv6中是不适用的。
+
+### 其他细节
+EXT3要求一个事务T1的所有的syscalls被完成后，另外一个新的事务T2的syscalls才可以跑起来。
+
+这边举了一个例子，大概是在一个Task的commit还没有完成的时候崩溃了，此时得到的结果就是，两个文件使用同一个inode。
+
+这边MIT的学生提了一些问题，非常好，其中老师解释了一种情况，也就是首先T8这个事件上来之后，要跑了前几个block之后，系统才能知道事务所需要的blocks具体的数目。因此，确实还是存在着覆盖了后面的T5的可能性。
