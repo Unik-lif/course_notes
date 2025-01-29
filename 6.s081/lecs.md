@@ -609,3 +609,79 @@ EXT3要求一个事务T1的所有的syscalls被完成后，另外一个新的事
 这边举了一个例子，大概是在一个Task的commit还没有完成的时候崩溃了，此时得到的结果就是，两个文件使用同一个inode。
 
 这边MIT的学生提了一些问题，非常好，其中老师解释了一种情况，也就是首先T8这个事件上来之后，要跑了前几个block之后，系统才能知道事务所需要的blocks具体的数目。因此，确实还是存在着覆盖了后面的T5的可能性。
+
+## Lec 17: VM for application
+希望让用户程序与内核有相同的机制，应用程序可以访问用户应用程序，让应用程序可以响应这些页面错误。可以修改页面的保护位。
+
+在这篇论文里，提到仅需要使用一小部分的虚拟内存原语，就可以得到很多类型的应用程序。
+
+基本的原语：
+- TRAP: 响应来自页面的错误 - sigaction
+- Prot1: decrease accessibility of One Page                                        - mprotect 
+- ProtN: decrease accessibility of N Pages, 与N次prot1相比，可以减少TLB刷新的次数     - mprotect
+- Unprot: increase accessibility                                                   - mprotect
+- Dirty: return a list of dirtied pages since the previous call
+- Map2: map the same physical page at two different virtual addresses. - mmaps
+
+### Unix today: mmap, mprotect
+```C
+addr = mmap(null, len, R/W, MAP_PRIVATE, fd, offset);
+mprotect(addr, len, Read_ONLY) -> lds
+sigaction: signal handler of the user application
+```
+### Implementation of VM
+Pagetable + Virutal Memory Area (VMAs) => Contiguous range of addresses, same permission baced by same object
+
+### User-level traps:
+PTE marked invalid -> CPU jumps to kernel -> kernel save states -> ask the VM system what to do -> upcall into user space -> run handler -> mprotect()? -> handler returns to kernel -> kernel resumes interupted process.
+
+在这边通过upcall into user space，本质上与触发问题的user program拥有相同的程序上下文，这自然也是一个利好之一。
+
+### Examples
+#### a huge memorization table
+the table store expensive results of function => pre-computed
+
+Challenge: the table might be huge, bigger than physical memory.
+
+Solution: use VM primitives.
+- allocate huge range
+- table[i] -> page fault
+- -> allocate page -> compute f(i) -> store in table[i]
+
+if much memory is in use, free some of the entries.
+#### Garbage Collector
+a copying garbage collector
+
+将内存分割成两个部分
+
+从root开始，遍历所有的object，把from空间的所有的能够指向的object都拷贝到to空间中。
+
+拷贝的同时做扫描，尽可能地拷贝所有live状态的object指针
+
+这个过程被称为forwarding，持续复制过来更新整个object的环形结构，forward全部的对象，然后把整个from空间都删除。
+
+这样，处于dangling和idle状态的东西自然而然就全部丢掉了。
+
+该算法被称为baker's算法，是实时并且incremental的一种算法。
+
+麻烦的地方：
+1. incremental地解引用，很麻烦
+2. 让这个东西并行其实并不容易，存在一定的风险
+
+论文描述的更新方案：如果我们有用户级别的原语，可以几乎免费地获得并发性。
+
+使用fault handler流程，事先把to部分全部用page map方式设置成NONE，scan one page of objects + forward
+
+在完成了这一次handler之后，就把这个区域重新加上unprotect机制，把单元一个一个地送到scan部分。
+
+更好的地方是不需要再做检查指针了，可以通过虚拟化的硬件机制，也就是sig handler机制来实现这一点了。
+
+这边的操作被简化为copy一页，然后通过fault handler来实现功能。unscan部分被设置为None的page bit.
+
+#### Tricky
+使用map2映射物理内存两次，来操作并没有被分配的页面内容。
+
+### 总结
+这篇paper我有点没看懂，先全部通读一遍，之后再考虑其他细节。             
+
+## Lec 18: 
