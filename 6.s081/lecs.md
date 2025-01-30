@@ -684,4 +684,89 @@ a copying garbage collector
 ### 总结
 这篇paper我有点没看懂，先全部通读一遍，之后再考虑其他细节。             
 
-## Lec 18: 
+## Lec 18: Microkernels
+tranditional kernel: monolithic
+
+big abstraction - e.g. FileSystem
+- portability
+- hide complexitiy
+- resource management
+
+These abstraction make the kernel very complex and big
+
+The Isolation of different components is lacking.
+
+Why not monolithic?
+- HUGE -> Complex -> Bugs -> Security
+- General purpose -> slow
+- Design Baked in big Kernels
+- Extensibility is not good
+
+Microkernels Idea:
+- tiny kernel support IPC, Tasks
+- Many functions are implemented in User Space, and use IPC to cooperate together.
+
+Example: L4, OpenHarmony
+
+Why use Microkernel?
+- small -> secore
+- small -> verifiable - seL4.
+- small -> fast
+- small -> more flexible
+- user level -> modular
+- user level -> easier to customize
+- user level -> more robust
+- O/S personalities
+
+challenges:
+- minimum syscall api?
+- - support exec(), fork()
+- rest of OS
+- - great pressure to make the IPC quick, IPC should be made quick enough
+
+L4:
+- 7 syscalls
+- 13000 LoC 
+- syscalls: create thread, send/recv, IPC, mappings, dev access, interrupt->IPC. yield syscalls
+- Pager to handle Lazy Allocation related page Faults.
+
+IPC slowness:
+- Process1: Send(ID, MSG): append message in the buffer, receive the info to inform finishment
+- Process2: Recv() -> ID, MSG from the shared buffer, later send the info to inform finishment
+
+This is asychronous buffered method, which is pretty slow.
+
+Another paper: L4 fast IPC (synchronous)
+- Let Process 1 there is a waiting Process out here. Unbuffered.
+- P1 and P2 both wait for the pointer to be valid and ready for receiving message.
+
+Huge message can be passed in this way. This is called RPC:
+- call() - send + recv
+- sendrecv() - send, but wait for reciving next message
+
+20x speed up.  
+
+这边的模型，是用了client-server模型，有一个一直都在忙等其他人的服务。最关键的是，P1可以直接跳转到P2的上下文中，这个方式相对来说比较hacky，但是很快。
+
+L4在userspace跑一个Linux Kernel，把Linux内部的应用程序放在外头跑，通过IPC的方式来告知L4系统做一些特权类的修改等等。
+
+对于linux和外头的VI进程，他们各自通过一个fork来专门负责进行IPC的交互和同步。
+
+一些时代局限性：
+- Linux内部的内核进程没必要由L4来进行接管，因为当时跑单核的机器，这并不会带了更好的性能提升。
+- 在当时的Linux中，Linux本身也假设一个kernel就只能跑一个核而已，即uniprocessor，没有spinlock等设计
+
+Takeaway:
+- Interesting design
+- argument whether microkernel is worth using, against Mach (bad performance)
+- still twice cost of the Linux (twice system calls in the process)
+
+AIM: benchmarks using many syscalls.
+
+这里morris还讲了一些关于生态位的思考。
+
+在L4中一直都在不同的组件中切换，本身就在切换不同的pagetable，这一点在他们从内核态和用户态中切换中，哪怕实现了在同一pagetable中存在，也不会对性能带来很多的帮助，因为L4就始终都是在不停地切换页表的。
+
+更加致命的一点，在微内核中为每个内核进程这么做，实在是太复杂了，根本没有什么利好，速度还很慢。
+
+实际上微内核的方案确实在很多情况下被拿去混合着了。论文里还有一些帮助加快切换页表的小技巧。
