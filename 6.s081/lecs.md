@@ -770,3 +770,59 @@ AIM: benchmarks using many syscalls.
 更加致命的一点，在微内核中为每个内核进程这么做，实在是太复杂了，根本没有什么利好，速度还很慢。
 
 实际上微内核的方案确实在很多情况下被拿去混合着了。论文里还有一些帮助加快切换页表的小技巧。
+
+## Lec 19: Virtual Machines
+Virtual Machine: simulation of the Machine
+
+### How to implement VM
+- Guest should not break in its isolated part.
+- emulation of the simulated virtual machine system.
+
+VMM is the kernel that boots on this piece of hardware. VMM is in the supervisor mode.
+
+VMM is a part of the Linux of the Host machine. Always VMM is a loadable part, like KVM.
+
+Tricks:
+- Run guest kernel in user mode
+- when the guest os uses privileged instruction, trap to RISCV hardware
+- VMM will intercept this and emulate the privileged instruction for the Guest Machine
+- VMM will keep each of the Guest Machine a set of states in the memory. (VMCS or VMSA).
+- All these changes to the registers are virtual, not the real registers, or it will trap into the real host os.
+
+即便是guest OS中通过sret跳转到user mode，VMM中也会通过mode一项来做修改，因此这件事需要trap到VMM中去。
+
+### Page Translation
+Guest Page TBL: gva -> gpa.
+
+VMM Map: gpa -> hpa.
+
+VMM "shadow" pg tbl: gva -> hpa. this what the real hardware uses.
+
+因此，用户需要某个gva，他就会自动翻译到hpa上。如果出现一些页面异常，会让host机器通过stap装上这个具体的shadow pg tbl，来实现地址翻译。
+
+这目前还是没有EPT出现的时候的方案。属于trap-and-emulate的方案。
+
+### Devices in VM
+1. emulation - 原生类型机器，不需要对OS做修改
+2. provide virtual devices: xv6 also uses, virtio_disk.c，这种类型的机器能够知道自己其实不是在真机上跑，类似于Xen这种类型，需要有一些针对性，可能对硬件也会有一些特定的需求
+3. pass through NIC: 直连类型的设备
+
+### Hardware Support For VM
+Intel VT-x
+
+THE VMM run in VMX 'root' mode, while the Guest Machine runs in VMX 'non-root' mode.
+
+Two sets of privileged registers.
+
+Another part: pg tbl.
+
+Use EPT (extended page table), to directly use the VM's pg tbl root address without trapping.
+
+Every core has its own set of registers.
+### Dune
+takes the VT-x hardware as the starting point.使用VT-x来创建一个DUne process进程，本来这是给VM来做的。
+
+- sandbox: let the supervisor manage the cr3 of the user mode in the Dune VM.
+- GC: 直接通过VT-x的cr3页面指向的页表项，根据Dirty位来判断是否是垃圾，相比原来的遍历方式，显著加快了垃圾回收的速度。
+
+特别的，GC是一个one-pass过程，之后将会冻结一切，其他之后的修改，我就不管了。
