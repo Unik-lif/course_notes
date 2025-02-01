@@ -826,3 +826,58 @@ takes the VT-x hardware as the starting point.使用VT-x来创建一个DUne proc
 - GC: 直接通过VT-x的cr3页面指向的页表项，根据Dirty位来判断是否是垃圾，相比原来的遍历方式，显著加快了垃圾回收的速度。
 
 特别的，GC是一个one-pass过程，之后将会冻结一切，其他之后的修改，我就不管了。
+
+## Lec 20: Biscuit
+Whether we can write an OS in a high-level language, instead of C?
+
+Written in C: complete control.
+
+Donwsides of C: writing secure C code is difficult
+
+HLL benefits: provide memory-safety.
+
+HLL downsides: Poor performance, incompatibility with kernel programming.
+
+Measure the HLL trade-offs in kernel.
+
+Risks: we can't build a similar kernel like linux, so the measurements of production-grade kernels differ.
+
+GO:
+- easy to call assembly
+- compiled to machine code with good compiler
+- easy concurrency
+- easy static analysis
+- GC
+
+Biscuit建立于Go runtime之上，并通过shim来欺骗Go runtime让其认为自己运行在一个操作系统上，而不是在裸机上。
+
+一个巨大的困难：Go语言的new不存在返回为error的情况，这也为堆的管理造成了很大的麻烦，堆用完了的时候该怎么办？
+
+See 'too small to fail'
+
+biscuit的解决方案，在跑会用掉堆的操作的时候，先跑一下reserve，来得到足够多的堆空间来执行接下来的操作。
+
+此外，这个reserve在没有足够空间的时候，只是在那里等，却不消耗什么资源。
+
+在biscuit中似乎避免了过多的函数调用，比如递归调用函数等行为。
+
+还有一些独特的go语言feature，让其在面对分布式和多线程的场景下有较好的适配能力，其中一个可能就是read-lock-free的情况。
+
+RCU: defer（推迟） free until all CPUs context switch and the operation is safe.
+
+### Comparison And Question
+
+HLL tax:
+- GC cycles
+- Prologue cycles: 高级语言需要预先在栈中放置足够大的空间，这样才能防止出现out-of-stack的问题。
+- write barrier cycles: 是在GC环节为了能够track pointers时特地设置的，本质上是检查这些指针是否指向我们真实需要释放掉的地址空间
+- safety cycles: 感觉是为了解决野指针的问题
+
+GC的代价: 使用高级语言之后，是否需要选用合适大小的内存空间来尽量减少GC的开销。
+
+一些写论文的技巧似乎也是在这里体现出来了：
+- 高级语言的代价是GC
+- GC的代价有多大
+- 为了GC可能要做的这个代价是否可以被容忍
+
+biscuit本质上是建立于Go runtime上的操作系统，它不是那么底层。
