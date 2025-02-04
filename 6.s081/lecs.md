@@ -881,3 +881,40 @@ GC的代价: 使用高级语言之后，是否需要选用合适大小的内存�
 - 为了GC可能要做的这个代价是否可以被容忍
 
 biscuit本质上是建立于Go runtime上的操作系统，它不是那么底层。
+
+## Lec 21: Networks
+```
+------------------------
+| DNS | UDP | IP | ETH |
+------------------------
+```
+在网络层可以一般认定呈现下面的格局：
+```
+LAN
+ ^     Browser    DNS
+ |         SOCKETS
+ |        UDP   TCP
+ |           IP         ARP
+NIC <---> NIC Driver
+```
+一般情况下，NIC会触发interrupt，会把信息存放到buffer中，为之后存储来用。然后会有一个IP thread来处理这些网络包，根据IP等信息做一些基本的处理，并解读成UDP准备发送出去。
+
+这个IP THREAD也可以接收从UDP发过来的网络包，并触发下面的NIC的中断，以实现RECV操作。
+
+### E1000 NIC
+在NIC收到请求之后，直接把相关的信息写到机器DMA存储中，其中是有一些用于缓存的空间的。这个存储空间也被称为DNA RING。
+
+对于SEND和RECV各自有一个DMA RING来存储相关的信息。
+
+如果SEND和RECV上不调和，多余的包可能会造成interrupt，从而显著降低处理速度和效率。这个现象就被称为livelock。
+
+解决方案：
+```
+Loop
+  pull a few packets
+  process packets
+  IF None packets are being processed
+    Enable Intr
+    sleep
+```
+本质上就是处理完积压的任务之后，我再允许新的请求进来，唤醒我去继续接受新的packets
