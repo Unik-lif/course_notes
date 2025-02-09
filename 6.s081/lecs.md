@@ -918,3 +918,26 @@ Loop
     sleep
 ```
 本质上就是处理完积压的任务之后，我再允许新的请求进来，唤醒我去继续接受新的packets
+
+## Lec 22: Meltdown
+即便人们不知道具体的CPU工作原理，但是可以通过猜测来尝试做攻击。
+```c
+chat buf[8192]
+r1 = <a kernel virtual address>
+r2 = *r1
+r2 = r2 & 1
+r2 = r2 * 4096
+r3 = buf[r2]
+```
+这个攻击依赖于人们为了加速syscall，而把kernel address和user adderss space映射到同一个页表中的利好。 
+
+还有一个机制是speculation，与之相伴随的机制是retired，一般是在memory load发生时，才出现预测执行后短暂指令的退役。
+
+以前没懂为什么计时时要分两个页，现在我懂了，因为被访问过后时间上的差距就不明显了。
+
+robert morris提到其中intel被爆破的可能性是从cache中读取时，对于permission的检查比较靠后，从而提供了攻击的窗口。
+
+## Lec 23: RCU
+read-write lock.
+
+Need further read the paper
