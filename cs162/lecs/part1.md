@@ -1,4 +1,29 @@
-# abstraction
+# Course Instructor: Ion Stoica
+
+## Lec1:
+process provides execution environment with restricted rights provided by OS
+
+Nowadays, great gap between computing needs and memory demands and CPU, even GPU can't mitigate this gap.
+## Lec2:
+Four fundamental OS concepts
+- Thread: single unique execution context => fully describes program state
+- Address Space: Programs execute in an address space
+- Process: Instance of an executing Program
+- Dual mode operation: protection, only 'system' can access certain part of resources
+
+Thread: certain registers hold the context of thread. A **thread** is executing on a processor when it is loaded in the processor.
+
+Address Space: Stack, heap.
+
+Multiprogramming: multiple processes of control
+
+Switching processes and threads:
+- when switching threads, we only need to change a bunch of registers
+- when switching processes, we also need to switch the resources and memory
+
+Concurrency problem => involves resources, OS has to coordinate all activity
+
+The OS will multiplex these abstract machines. While sharing is good, the protection might be compromised.
 ## lec3:
 Talk about process and thread.
 
