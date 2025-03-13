@@ -12,4 +12,24 @@ socket is a bi-directional communication method.
 
 > However, the processes are seperate, how do they know they want to interact?
 
-30:51
+using namespaces for communication over IP
+
+### Connection setup over TCP/IP
+Server side
+- create server socket
+- bind it to an address (host:port)
+- listen for connection
+- accept syscall
+- create another socket to the client
+- read request
+...
+
+Client side
+- create client socket
+- connect it to server (host:port)
+- write request 
+...
+### concurrency
+that is about scheduling => about queues
+
+Multiple Queue, Multiple policy
