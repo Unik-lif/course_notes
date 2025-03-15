@@ -3,7 +3,7 @@ I am from UCAS, however my major isn't computer science.
 
 Majoring in cyber-security, we don't have some hardcore courses that provide me the chance to develop our skills fully. These skills are so imporant for system guys.
 
-[感觉自己啥都没学，代码完全不会写，纯背书考分，老师教啥就背啥，让干啥就干啥，从不课外用功，莫名其妙保研了，所以读研后用业余时间刷课，把基本能力捡起来]
+[新专业开设第一年问题很大，大家懂得都懂，结果就是感觉自己啥都没学，代码完全不会写，纯背书考分，老师教啥就背啥，让干啥就干啥，从不课外用功，莫名其妙保研了，所以读研后用业余时间刷课，把基本能力捡起来]
 
 I used to put my notes into my blog, but this will also cause a big problem, it decreases my blog's quality.
 
