@@ -31,7 +31,7 @@ Courses I've completely finished in my spare time: (not so much in fact, I shoul
 - rustlings & rCore [Tsinghua]
 - - 比较成熟，反馈及时，就是开源版本的过于轮椅了，可能清华校内的版本会很有挑战性
 - 6.s081 [MIT]
-- - 相对来说比较标准，看代码和书籍
+- - 相对来说比较标准，看代码和书籍收获很大，我也做了不少笔记
 - cs50-AI [Harvard]
 - - 真的是看论文纯摆烂的时候做的，一个项目做个一天就差不多了，但是很适合入门看起来
 
