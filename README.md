@@ -14,6 +14,7 @@ U can use these notes for sure, cause i am still a student. The persons you shou
 I don't have much time spending on self-learning now, but I will take it simply as a game.
 
 Courses I want to finish these days:
+- 6.824 [MIT]
 - cs188, cs162 [UCB]
 - cs220 [KAIST]
 - ysyx [NJU/UCAS]
