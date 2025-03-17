@@ -66,4 +66,4 @@ But we should have atomic operation to make it indivisible, or the number and be
 #### Lock
 less interesting
 
-Maybe I need refer to the book now!! I will open another directory here record what I've read.
+Maybe I need refer to the book now!! I will open another directory here record what I've read.-
