@@ -16,3 +16,18 @@ dual-mode的出现
 - 内存碎片化
 
 为了更好使用内存，添加虚拟地址这一层抽象
+
+Interrupt一般都是异步的
+- 当interrupt发生的时候，只需要有一个CPU core能够handle就行，其他的核继续做自己应该做的事情就可以
+- interrupt的来源包括用户触发，I/O完成后触发，以及处理器内部触发
+- 处理器间的异常用于多个核之间的同步与合作
+
+Buffer descriptors和高性能I/O
+- 存一个环形队列，作为buffer存储I/O请求，利用descriptor来给DMA来直接访问
+- 这样就能存储请求，在处理I/O时，I/O还能继续运行
+
+Processor exceptions
+- 出现一些奇妙的行为，比如除零操作，GDB输入INT3操作等
+- 某些操作需要让OS发送请求把其他核一并中断
+
+
