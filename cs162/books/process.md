@@ -29,5 +29,13 @@ Buffer descriptors和高性能I/O
 Processor exceptions
 - 出现一些奇妙的行为，比如除零操作，GDB输入INT3操作等
 - 某些操作需要让OS发送请求把其他核一并中断
+- exception触发时的某些操作可以用于模拟较为古早的设备和硬件，这在虚拟机中很有用
 
+很多操作系统似乎会给用户进程提供User-level的upcall能力，可以让用户进程接收到异步event的通知信息。
 
+一些有趣的切换的设计考量
+- 有限的entry points
+- 原子性的处理器状态切换，mode，PC，stack，memory protection的切换需要原子
+- 控制流需要能够restartable
+
+异常发生时，
