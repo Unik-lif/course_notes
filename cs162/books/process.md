@@ -62,3 +62,19 @@ Processor exceptions
 - Intel则是丢掉interrupt发生时后头的指令，处理完异常之后，重新执行一遍
 
 中断处理这一部分，由于我自己确实自己实现过，就掠过了。
+
+系统调用的时候，存在一些边界问题，有可能会被TOCTOU攻击，为此，在内核中会有一个叫做kernel stub的存在，用于保证系统调用时的可用性
+- 检查userStackPointer中所示的地址是否正确
+- 做完检查之后，拷贝到内核本地地址，并比较相关的内容是否被篡改了，需要确保正确
+
+Upcalls: 由Kernel发送给用户的一些事情
+- 由某些事件触发user程序本身的注意力
+- 线程之间的平均共享，利用timer来做
+- 由user process自行来处理exception事件
+- signals: user地址自动存放上下文信息
+
+user signal处理流程
+- 由kernel把保存的状态的信息拷贝到signal stack的底部
+- 重新设置保存状态使得其指向用户的signal stack部分
+- 利用iret跳转到用户层面，由用户的signal handler来处理，处理放在用户的signal stack中
+- signal handler返回的时候，处理器状态将先重新被拷贝到kernel memory中，再利用iret返回到用户进程里
