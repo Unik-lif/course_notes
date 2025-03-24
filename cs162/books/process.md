@@ -1,4 +1,5 @@
 ## 阅读记录
+### Chapter 2
 用词的变化：
 - 一开始机器没有什么多线程的，所以就只有进程
 - 后来出现了多线程的进程，所以出现了lightweight thread这种说法
@@ -78,3 +79,23 @@ user signal处理流程
 - 重新设置保存状态使得其指向用户的signal stack部分
 - 利用iret跳转到用户层面，由用户的signal handler来处理，处理放在用户的signal stack中
 - signal handler返回的时候，处理器状态将先重新被拷贝到kernel memory中，再利用iret返回到用户进程里
+
+由于BIOS程序会写到ROM中，不能被修改，而OS的更新往往是很多的。为此，工程师们只是会把小部分的代码放到BIOS中
+- 上电之后，从ROM读取BIOS代码
+- BIOS从磁盘中拷贝bootloader
+- bootloader拷贝操作系统内核
+- 操作系统内核把login app拷贝到内存中
+
+为了通过完整性检查，BIOS还会用密码学签名来防护之
+
+虚拟机这边：本质上是模拟真实硬件中，跑guest operating system的效果
+- host kernel一定程度上扮演起了硬件角色，会负责原本硬件做的存储上下文到特定位置的工作
+- 由用户进程产生的exceptions，host kernel会直接移交给guest kernel处理
+- 但是由guest kernel触发的exceptions，host kernel会自己来做模拟
+- 因此host kernel必须要track virtual machine当前运行的状态
+- timer时钟由host kernel自硬件捕获，然后模拟硬件，跳转到guest kernel的时间interrupt处理函数中
+
+IO方面，则直接让host kernel拷贝文件信息到对应的guest kernel memory中，效果就像真的DMA hardware一样
+
+特别的，新的处理器中，guest operating systems甚至可以自己直接来处理异常请求
+### Chapter 3
