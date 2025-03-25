@@ -98,4 +98,16 @@ user signal处理流程
 IO方面，则直接让host kernel拷贝文件信息到对应的guest kernel memory中，效果就像真的DMA hardware一样
 
 特别的，新的处理器中，guest operating systems甚至可以自己直接来处理异常请求
+
 ### Chapter 3
+需要搞清楚哪些东西是放到OS中，哪些东西是放在User-Level的library中
+
+Thin waist模型：保持OS library和开发中间件的大体一致，从而促使应用和硬件的解耦，以及更进一步的发展
+
+User与OS的边界主要考虑下面几个因素
+- 灵活度, syscall语义要更加固定，但能表示很多
+- 安全性，资源管理和防护需要交给OS
+- 可靠性，轻量化的内核可靠性一般会更好
+- 性能，如果总是去kernel，会有较大的代价
+
+设计system call interface其实并不容易，在不同操作系统中的各个不同环节，在哪个部位体现OS的参与度和功能性是一个很重要的问题
