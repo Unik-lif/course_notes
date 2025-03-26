@@ -109,10 +109,11 @@ Basic Idea:
 
 The searches communicate! That is the best part of this algorithm. => genetic algorithms.
 
-## Lec3+: CSPs
+## Lec4: CSPs
 The goal itself is important, not the path.
 
 ### CSPs:
+Constraint Satisfaction Problems
 - standard search problems: State is a black box.
 - a special subset of search problems. Goal test is a set of constraints specifying allowable combinations of values for subsets of variables.
 
