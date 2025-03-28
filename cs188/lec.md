@@ -118,4 +118,32 @@ Constraint Satisfaction Problems
 - a special subset of search problems. Goal test is a set of constraints specifying allowable combinations of values for subsets of variables.
 
 Initial State: Empty, Goal State: all variables have its values.
-### Backtracking Search 
+
+Goal test is a set of constraints specifying allowable combinations of values for subsets of variables.
+
+Key components:
+- Variables
+- Domains
+- Constraints
+- Solution
+### Backtracking Search
+basic uninformed algorithm for solving CSPs.
+
+continuing until some faults happen.
+- Ordering: which variable should be assigned next, and in what order should its values be tried?
+- In what order should its values be tried?
+
+Filtering:
+- keep track of domains for unassigned variables and cross off bad options
+- cross off values violating constraint when added to the existing assignment
+
+an Arc X-> Y is consistent iff for every x in the tail there is some y in the head which could be assigned without violating a constraint
+
+如果做不到iff，就得删除相关的元素
+
+### AC3
+似乎非常简单，说白了就是把所有的constraints赛进来，逐个条目进行检查。
+
+### MRV: minimum remaining values
+choose the variable with the fewest legal left values in its domain
+
