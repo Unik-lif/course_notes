@@ -147,3 +147,53 @@ an Arc X-> Y is consistent iff for every x in the tail there is some y in the he
 ### MRV: minimum remaining values
 choose the variable with the fewest legal left values in its domain
 
+## Lec5: CSPs II
+forwarding checking 和 arc-consistency 的区别
+- 前者直到出现错误结束
+- 后者是发现未来某些情况不可信就去除，更加未雨绸缪
+
+K-consistency
+- any consistent assignment to k-1 can be extended to the k_th node
+- expensive
+
+3-consistency
+
+### Tree CSPS
+compared to general CSPs, where worst-case time is O(d^n), tree is much better.
+
+can be solved in O(nd^2)
+
+还是比较容易推理得到的
+
+之后还引入了做割集的方式，
+
+## Lec6:
+Adversarial Search (minimax)
+- for zero-sum games
+- compute each node's minimax value
+
+预测对手的行径，对手是希望你的分数变得更加的低，所以自己在做的时候，选择让对手让你最低分数最高的那一个分支
+- 也就是假设自己的对手很聪明，能够拿到最优解
+- 空间复杂度可能是O(bm)，这种情况就是某一条很长的路线往下摸索，直到考虑最后一步对手可能的决策
+
+minimax pruning
+- 去除掉不需要计量的部分，比如可能表现更小的分支，因为maxer不会让控制流进入到那一束
+
+这边的函数定义还是有点奇怪的
+```python
+def min-value(state, a, b)
+    initialize v = + maximum
+    for each successor of state:
+        v = min(v, value(successor, a, b))
+        if v <= a return v
+        # b需要被更新，a表示到state这个节点的最大值
+        # 你的对手一定会找这个最大值
+        b = min(b, v)
+    # 最后返回一个子节点
+    # 但似乎是告诉上面的结点，情况会比V更糟，当然可能不会访问v这一条
+    return v
+```
+
+alpha-betra pruning其实自己去做还是挺麻烦的，需要通过练习来进一步地巩固
+
+Depth matters
