@@ -197,3 +197,31 @@ def min-value(state, a, b)
 alpha-betra pruning其实自己去做还是挺麻烦的，需要通过练习来进一步地巩固
 
 Depth matters
+
+## Lec7:
+Worst-Case vs Average Case
+
+expectimax search: values should now reflect average-case (expectimax) outcomes, not worst-case (minimax) outcomes
+
+主要是为了考虑真实情况下，你的对手也没有办法做到最优，比如丢硬币
+
+唯一的问题是：没有办法pruning，因为所有的值都很重要
+
+Expectimax Pacman: Optimistic thinking it is safe
+
+Minimax Pacman: Pessimistic thinking it is dangerous
+
+使用不同的策略确实会影响到最后的表现，尤其是在你的对手也可以调整攻击策略的时候
+
+### Utility
+Minimax might not be a good idea
+- 所谓杞人忧天
+
+Preferences:
+- An agent must have preferences among prizes A, B, etc.
+
+这里借用了数学分析里头的偏序的概念来展现 rational preferences 这一概念
+
+一般化后其实就是MEU Principle，即Maximum expected utility principle
+
+但是人性要比这个还要复杂一些，比如如果你能稳赢，但是期望更低，可是你还是会考虑稳赢
