@@ -42,3 +42,5 @@ Books fully read and understood
 - - I enjoy reading this book
 - xv6 book
 - - elegant
+- OSPP I: Kernels & Processes
+- - 其实写的非常好，xv6和OSTEP是偏hacky的书，但是OSPP展现的风格很系统
