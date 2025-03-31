@@ -24,8 +24,11 @@ pintos --
 Makefile的具体流程是：
 - 通过include加载外头的Makefile.kernel内容
 - 加载读入Make.vars中设置的变量名信息
-- 通过前缀方式把需要的文件包装到build里头，并且把需要的Makefile.build复制进去，对于build下的各个子目录，均跑一下对应
+- 通过前缀方式把需要的文件包装到build里头，并且把需要的Makefile.build复制进去，对于build下的各个子目录，均跑一下对应的make
+- 以kernel.bin的方式来进行组织
+- 最终以qemu模拟器将其进行模拟加载
 
+然而，这边似乎用了一种比较古老的脚本语言
 
 ### 细节
 - $@表示目标文件，$<表示第一个依赖项

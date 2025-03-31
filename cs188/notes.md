@@ -3,3 +3,5 @@
 
 Completeness的意思：只要有一个结果，那么这个算法就能找到它。
 
+## HW2:
+CSP的定义搞清楚，什么是arc consistency，什么是backtracing，什么是forward checking，搞清楚搞完备后，这次的练习就会很简单了。
