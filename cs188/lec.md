@@ -225,3 +225,31 @@ Preferences:
 一般化后其实就是MEU Principle，即Maximum expected utility principle
 
 但是人性要比这个还要复杂一些，比如如果你能稳赢，但是期望更低，可是你还是会考虑稳赢
+
+## Lec8:
+Grid World:
+- Noisy Movement: actions do not always go as planned
+- Rewards: receives rewards each time step
+- Goal: maximize the reward
+
+In stochastic grid world, the outcome is underterministic
+
+Markov Decision Processes
+- A set of states
+- A set of actions
+- A transition function: probability that a from s leads to s'
+- A reward function
+- A start state
+- Maybe a terminal state
+
+MDPs are non-deterministic search problems
+- Markov means action outcomes depend only on the current state
+- use policy not a plan, a policy is a function to recommend your next action
+
+Discounting
+- Reward will decay by the time
+- Prefer now to later
+
+Bellman Function
+
+Key Idea: your state is determined by the former states you've been gone through
