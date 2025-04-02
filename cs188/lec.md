@@ -253,3 +253,12 @@ Discounting
 Bellman Function
 
 Key Idea: your state is determined by the former states you've been gone through
+
+## Lec 9
+Convergence will happen, because reward decays at $\gamma ^{k}$ for depth of $k$, while $\gamma$ is smaller than 1, bigger than 1.
+
+Optimal policy is correct but so slow, an alternative approach should be proposed:
+- step1: policy evaluation
+- step2: policy improvment
+
+policy-extraction
