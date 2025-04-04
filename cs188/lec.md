@@ -262,3 +262,29 @@ Optimal policy is correct but so slow, an alternative approach should be propose
 - step2: policy improvment
 
 policy-extraction
+
+## Lec 10
+RL: Reinforcement Learning
+- Agent receive feedback in the form of rewards
+- Agent's utility is defined by the reward function
+- Must act so as to maximize expected rewards
+- All learning is based on the feedbacks
+
+problem is the same as MDPs, but the policy is vague. Learn from your experience.
+
+Offline: MDPs vs. Online (RL)
+
+The actual space is given, but we don't know the T and R.
+- T: transition
+- R: reward
+
+Model-based and Model-free 
+- based on an estimation model
+- based on your own exact direct trails
+
+通过observed episode来进行训练，设置不同结点上对应的值，做一个direct evaluation来确认大致的前行方向
+
+### Costly
+It will be costly, because you'll need infinite time to converge.
+
+- use Simplified Bellman updates calculate V for a fixed policy
