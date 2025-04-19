@@ -80,4 +80,22 @@ Not all luck, courage, curosity
 认识自己的长处，有时候利用自己的短处去学习
 
 ## Lec2:
-The UNIX Timesharing System
+### In Class
+#### The UNIX Timesharing System
+主要介绍了Unix的长处，以及一些特色的介绍，不过我们本身对Linux很熟悉，这些东西技术点就别看了
+
+来聊聊为什么这个东西很成功
+- Designed the system to make it easy to write, test, and run programs => Interactive
+- Hamming所说的，某些限制下的工作，salvation through suffering
+- 及时修改，所有的应用程序都跑在shell以外
+
+看起来也实现了Filesystem和内存的解耦，关键问题是并没有把memory的解读定死，而是使用untyped方式来做，提高了普适性
+#### END-TO-END ARGUMENTS IN SYSTEM DESIGN
+底层机器就应该做好底层机器应该做的事情，不应该尝试添加一些更高级的功能，否则性价比会变得非常低
+
+在交互系统中，函数与程序的一些具体功能需要在端侧才能较好地实现，因为它们更清楚本身的需求。但是，把这一类的feature放置到communication system本身并不是一个良好的设计，但如果system中能够部分支持相关的能力，这将会提高performance enhancement
+
+这个判断我只能说确实一针见血
+
+但其他的具体的例子就没必要看了，太老了
+### Take Home
