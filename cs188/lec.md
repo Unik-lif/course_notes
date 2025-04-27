@@ -263,6 +263,11 @@ Optimal policy is correct but so slow, an alternative approach should be propose
 
 policy-extraction
 
+Bellman Function
+
+Key Idea: your state is determined by the former states you've been gone through
+
+本质上是一个逆向递归的机制，用来让我们的估计可以变得更加精确。这边的former并非是父亲结点，而是上一时刻的状态值。
 ## Lec 10
 RL: Reinforcement Learning
 - Agent receive feedback in the form of rewards
@@ -281,9 +286,22 @@ The actual space is given, but we don't know the T and R.
 Model-based and Model-free 
 - based on an estimation model
 - based on your own exact direct trails
+- Model-based: weighting by probability
+- Model-free: no probability, the random selection of samples have already reflected the probability
 
-通过observed episode来进行训练，设置不同结点上对应的值，做一个direct evaluation来确认大致的前行方向
+基本思路很简单，根据真实情况，确认Learned Model中的T和R值的分布情况，分别表示状态转移的可能性和对应的奖励
 
+### Two types
+#### Passive RL
+Direct Evaluation: 直接观察Episodes变化，对不同状态赋值，但是忽略了本身不同状态之间值的转换
+
+Sample-based Ealuation: Average the Experience
+
+Exponential Moving Average: 某种数列
+#### Active Reinforcement Learning
+Use Q value => Learn the optimal policy/values
+
+与Value Iteration相比，你不需要知道max对应的action，在开放型问题中很有用
 ### Costly
 It will be costly, because you'll need infinite time to converge.
 
