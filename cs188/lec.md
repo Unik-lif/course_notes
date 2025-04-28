@@ -306,3 +306,43 @@ Use Q value => Learn the optimal policy/values
 It will be costly, because you'll need infinite time to converge.
 
 - use Simplified Bellman updates calculate V for a fixed policy
+
+## Lec 11
+引入一个$\epsilon$作为随机选择的可能性，用来在一开始提高coverage，但是之后则可以逐步降低这个值
+
+Exploration functions, takes a value estimate u and a visit count n, and returns an optimistic utility
+- e.g. $f(u, n) = u + k/n$
+
+favoring actions we haven't gone through
+
+Q value will propagate，这也意味着哪怕你对某个区域已经有了一定探索，探索所带来的奖励并不多时，依旧会有进入某个区域的惯性
+
+### Regret
+You wish you haven't done something you did.
+
+Random epsilon learner will have much more regret than exploration function-based learner
+
+### Approximate Q-Learning
+In realistic Cases, Q-Values are too many to visit them all in training
+
+How to learn small number traning states from experience, and then generalize that experience to new, similar situations
+- combine features together: Linear Value functions
+- Advantage: our experience is summed up in a few powerful numbers
+- Disadvantage: states may share features but actually be very different in value
+
+$Q(s, a) = w_{1}f_{1}(s, a) + \cdots + w_{n}f_{n}(s, a)$
+
+如果这些feature本身比较少，强化学习的速度将会是飞快的。
+
+本质上是机器学习中的概念，到强化学习领域的迁移，这是一个很自然的，老师的用词是，well-justified，说白了就是gradient descent的其中一种形式，很期待
+
+但问题是，这本质上只是related，对于不同的特征走gradient descent是会有一定的效果，但是本身只能正相关反映，可能还是存在粗放狂野的可能性
+### Policy Search
+just try policy and find what is the best
+
+这个方法相对于上个方法更加与我们的任务直接关联
+
+## Sum
+First Part: Search and Planning
+
+Next Part: Uncertainty and Learning!!
