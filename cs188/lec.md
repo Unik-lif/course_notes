@@ -346,3 +346,10 @@ just try policy and find what is the best
 First Part: Search and Planning
 
 Next Part: Uncertainty and Learning!!
+
+## Lec 12
+Skip, Trivial
+
+Bayes' Rule: from known to unknown, backward inference => sounds into words and sentences.
+
+## Lec 13
