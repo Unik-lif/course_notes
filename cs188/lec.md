@@ -353,3 +353,41 @@ Skip, Trivial
 Bayes' Rule: from known to unknown, backward inference => sounds into words and sentences.
 
 ## Lec 13
+Bayes' Nets
+- a set of nodes, one per variable x
+- a directed, acyclic graph
+- a conditional distribution for each node
+
+A Bayes net = topology (graph) + Local Conditional Probabilities
+
+A bayes' nets implicitly encode joint distributions
+- $P(x_1, x_2, \cdots, x_n) = \prod_{i = 1}^{n}P(x_i | parents(X_i))$
+- **key points**: independent parent $X_i$
+
+需要注意的是拓扑结构的排序总是可以存在，因此总是能够构成一个链式结构，满足拓扑结构的需求。
+
+贝叶斯网络的关键在于，我们首先要为变量选择一个与网络结构一致的排序。这意味着如果在有向图中存在从$X_i$到$X_j$的边，那么在排序中$i$必须小于$j$。由于贝叶斯网络是有向无环图(DAG)，这样的拓扑排序总是存在的。
+
+其实仔细想想，你就按照拓扑排序的结构，从根结点向下走到leaf处就可以了。
+
+但是并不能说爷爷和你就一定没有关系，一定是独立的，或者一定不是独立的，这是一个概率问题，但是如果建立在given parent的情况下，那确实是独立的
+
+这种情况有点相当于是你爷爷和你确实有亲缘关系，但是如果建立在大家都知道你叠是谁的情况下，你爷爷是谁就不重要了，生了你的是你爸妈不是你爷爷
+
+这个很暴论，不过确实可以证明，下一节课会说
+## Lec 14
+Conditional Independence
+- P(x, y) = P(x)P(y), X and Y are Independent
+- P(x, y|z) = P(x|z)P(y|z), X and Y are conditionally independent given Z
+
+If the parents of the nodes are not all the previous nodes, we can't represent the nodes in Baye's nodes (Not a Ascylic directed graph).
+
+这边还研究了triple结构的贝叶斯网络，并探讨这些边边是否是独立的
+
+$P(x,y ,z) = P(x)P(y|x)P(z|y)$
+
+Features: 
+
+$P(z|x, y) = \frac{P(x,y,z)}{P(x,y)} = \frac{P(x)P(y|x)P(z|y)}{P(x)P(y|x)} = P(z|y)$
+
+Independent of X given Y.
