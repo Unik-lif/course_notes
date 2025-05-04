@@ -391,3 +391,5 @@ Features:
 $P(z|x, y) = \frac{P(x,y,z)}{P(x,y)} = \frac{P(x)P(y|x)P(z|y)}{P(x)P(y|x)} = P(z|y)$
 
 Independent of X given Y.
+
+把Triple各种情况摸清楚，剩下来就是好好理解一下active和inactive各自代表了什么，需要花一些时间阅读记录在notes中的笔记，其实还是有一定思维难度的。
