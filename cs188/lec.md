@@ -393,3 +393,50 @@ $P(z|x, y) = \frac{P(x,y,z)}{P(x,y)} = \frac{P(x)P(y|x)P(z|y)}{P(x)P(y|x)} = P(z
 Independent of X given Y.
 
 把Triple各种情况摸清楚，剩下来就是好好理解一下active和inactive各自代表了什么，需要花一些时间阅读记录在notes中的笔记，其实还是有一定思维难度的。
+
+## Lec 15
+Inference: calculating some quantities from a joint probability distribution
+
+当然确实也存在不在考虑范围内，但是可能会影响到最终结果的隐藏变量
+
+Inference
+- by Enumeration
+- by Variable Elimination
+
+本质上是尽早地发现某些变量之间的相关性，降低需要考虑的变量的维度数目
+
+Factor: a multi-dimensional array
+- value: P(y1y2..yn|x1x2..xn)
+- x1x2..xn is unknown, any assigned X or Y is a dimension missing from the array, while the array, we can enumerate on them
+
+Operation 1: join Factors
+- 本质上就是对于存在两个变量的entry，对其进行pointwise products操作
+- build a new factor over the union of the variables involved
+- 比如，把P(R)和P(T|R)转变为P(R, T)变量，两张表化成一张表
+
+Operation 2: Eliminate
+- 直接把某个变量灭掉
+- 比如我们不关心R，对于P(R,T)的表，我们直接将其转化成P(T)
+
+第三种方法，我们join一步之后，尽早地去完成eliminate步骤
+
+现在我们大概知道了具体怎么操作，但是还是需要给出一个更加正式的算法
+### Algorithm
+Input: a bunch of local factors in Bayes' nets
+
+Query: P(Q|E1=e1, ..., Ek=ek)
+
+Start with Initial factors, like local CPTs (but instantiated by evidence)
+
+While there are still hidden variables, not Q or evidence
+- pick a hidden variable H
+- join all factors mentioning H
+- Eliminate H
+
+join all remaining variables and then normalize
+
+这边有一些消除方法并没有用很严谨的方式去做，但是我数学能力有限似乎也不大容易能够证明出来，不过数学确实不是这门课的重点
+
+证明出来了，直接用条件概率的定义就好了，不知道为什么这几个老师根本就没提一句，而是直接观察
+
+the choice for variable ordering counts
