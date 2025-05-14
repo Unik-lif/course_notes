@@ -440,3 +440,37 @@ join all remaining variables and then normalize
 证明出来了，直接用条件概率的定义就好了，不知道为什么这几个老师根本就没提一句，而是直接观察
 
 the choice for variable ordering counts
+## Lec 16
+Approximate Inference: Sampling
+
+a trade-off 
+
+Sampling in Bayes' Nets
+### Prior Sampling
+create an event to go through the whole networks
+
+以拓扑排序的方式进行取样n次就行，之后返回
+
+$S_{PS}(x_1, \cdots, x_n) = P(x_1, \cdots, x_n)$
+### Rejection Sampling
+其实就是对于给定某个条件下的值
+
+if $x_i$ is not consistent with evidence, we simply reject it.
+
+区别只在于根据一开始的需求去做Early Rejction，而不等到最后一个环节
+### likelihood weighting
+Solve the following problems: if evidence is unlikely, rejects lots of samples
+
+本质上因为对于evidence过于重视，导致本身样本量较小，从而缺乏对于某些其余特征的样本了
+
+因此干脆将evidence variables fix为正确的，俺寻思你也是对的，但是最后统筹考虑时，要乘上权重的值
+
+不同的samples都会被使用，但是都是有weight的
+### Gibbs Sampling
+似乎是一个很玄学的方法，不停地采样迭代，不过直觉上似乎能行
+
+本质上这样的采样最后会把各个变量之间的相关性彰显出来，在概率上的依赖也是
+
+蛮有意思，不过我们直接skip过去
+
+接下来我们去做gradescope上的题
