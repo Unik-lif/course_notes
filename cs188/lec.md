@@ -474,3 +474,16 @@ Solve the following problems: if evidence is unlikely, rejects lots of samples
 蛮有意思，不过我们直接skip过去
 
 接下来我们去做gradescope上的题
+
+## Lec 17
+Decision Networks
+
+MEU: choose the action which has Maximum Expected Utility
+
+Taking an Action, decide which action is the best.
+- Instantiate all evicdence for every single possible way
+- calculate posterior for all parents of utility node, given the evidence
+- calculate expected utility for each action
+- choose maximizing action
+
+（17：44）
