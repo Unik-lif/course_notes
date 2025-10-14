@@ -60,7 +60,8 @@ Only Stop when we dequeue a goal.
 Maybe the Heruistic function is not so good.
 
 A heuristic `h` is `admissible` (optimistic) if:
-$$0 \le h(n) \le h^{*}(n)$$ 
+
+$0 \le h(n) \le h^{*}(n)$ 
 
 h^{*}(n) is the true cost to a nearest goal.
 
@@ -435,11 +436,12 @@ While there are still hidden variables, not Q or evidence
 
 join all remaining variables and then normalize
 
-这边有一些消除方法并没有用很严谨的方式去做，但是我数学能力有限似乎也不大容易能够证明出来，不过数学确实不是这门课的重点
-
-证明出来了，直接用条件概率的定义就好了，不知道为什么这几个老师根本就没提一句，而是直接观察
 
 the choice for variable ordering counts
+
+这是enumerate的方案，但是在某些情况下，比如网络增长到一个量级时，计算会变得非常复杂。那么与其全部enumerate完毕，不如一步一步来做？
+
+这就是Variable Elimination
 ## Lec 16
 Approximate Inference: Sampling
 
