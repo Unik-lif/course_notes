@@ -149,4 +149,40 @@ Not all luck, courage, curosity
 
 感觉更多强调的是硬件能力的最大化，以及打破了微内核性能就是不行这一点固有认知
 
-#### 
+#### Exokernel
+原本OS的一些抽象限制了app本身更多性能的提升
+
+为了更好地把资源给app，为此提出了三个技术
+- secure bindings
+- visible resource revocation
+- abort protocol
+
+首先指出了general-purpose来让特权级系统软件来做系统抽象的劣势
+- 过于general-purpose的实现会影响性能，尤其是程序行为比较固定的情况下（比如说数据库）
+- 高抽象导致一些关键和底层信息被屏蔽，让应用程序不可见
+- 高抽象导致某些fancy的功能也没有用了
+
+LibOS是Exokernel为了让应用能够得到底层细节的一个重要尝试，同时Exokernel需要给LibOS足够的底层细节，和基本的安全保护
+
+LibOS设计原则
+- 尽可能直接把硬件资源和底层资源给出，但是并不直接去分配资源
+- 参与资源分配的过程，能够去要硬件资源
+- 对于物理资源需要有一些名字来去掌管，具体体现在某些数据结构的管理上
+- 能够回收之前要过来的资源
+
+具体技术
+- Secure bindings：提供access time和bind time两个原语，在access time的时候显著减少原本可能需要的安全检查，从而提高性能，这是原意，但因此在bind time的时候，一定要做好检查。一些做法可能类似于软件实现的TLB
+- multiplexing phyiscal memory: 已经由OS分配了权限的应用程序可以把自身的权限能级送出去，而送出去的这个过程就不需要内核来介入了
+- multiplexing the network: 硬件上可以让某些应用专门走哪些stream，软件上可以以packet filters的模式来做
+- visible resource revocation, or not: 各有千秋，但是visible确实更容易知道用户程序本身的需求
+- abort protocol：出错了之后利用repossession exception来让LibOS来代劳，用户本身很难把这些情况描述清楚，因此这边添加了一个新的异常类型
+
+优势
+- 处理异常和系统调用都快了超级多
+- 主要原因是避免了进入到内核数据结构中，少了一些TLB miss
+- 感觉更多是软件实现上的性能提升，但是很显著
+- 感觉更多是hardware-aware的设计
+
+ASH
+- 用户写好的，经过内核认证的，最后能够在内核这边跑起来的东西
+- 我曹，这东西不就是eBPF吗
