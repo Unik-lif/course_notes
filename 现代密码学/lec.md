@@ -151,3 +151,26 @@ optimal: 说白了就是K空间大于等于M空间
 伪随机性:
 - 不能和一个均匀的分布区分开来
 - 这个指的也是一个概率分布，而不是某个特定的比特串
+
+### Read
+Concrete Approach: 不够具体，只说了某个scheme被攻击者跑t seconds之后，最多有$\epsilon$概率被攻破
+
+主要是缺乏其他细节的描述
+
+Asymptotic Approach: 渐进式的方法
+
+A scheme is secure if any ppt adversary succeeds in breaking the scheme with at most negligible probability.
+
+这个描述的方式好处在于，不像concrete approach那样固定而呆板了
+- efficient adversaries: 可以用多项式速度来破解秘钥的人
+- small probabilities of success: 比任何多项式的倒数还小的概率
+
+PPT: probabilistic polynomial-time
+
+
+## lec 4
+stateful var: 带了状态的版本（其他的变式）
+
+明文长度：CBC一定是需要扩充的，组间有依赖关系，如果不打组，性能会烂掉，此外，也很容易猜到
+
+CTR mode具体的3/4 n 怎么取，（不只是3/4），可以根据需求动态地进行选择

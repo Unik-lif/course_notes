@@ -1,0 +1,172 @@
+## hw2
+Linke Song 202418018629018
+### 3.4
+Note that, as $A$ can only outputs 0 or 1, by the definition of the conditioned probability.
+
+$$Pr[A \ outputs \ 1 | b = 1] + Pr[A \ outputs \ 0 | b = 1] = 1$$
+
+$$Pr[A \ outputs \ 1 | b = 0] + Pr[A \ outputs \ 0 | b = 0] = 1$$
+
+Without the loss of the generality, We assume $negl(n)$ is greater or equal to zero
+
+=> 
+
+By Definition:
+
+$$Pr[PrivK^{eav}_{A, \pi} (n) = 1] = \frac{1}{2} \cdot (Pr[A \ outputs \ 0| b = 0] + Pr[A \ outputs \ 1 | b = 1]) \leq \frac{1}{2} + negl(n)$$
+
+So,
+
+$$Pr[A \ outputs \ 0| b = 0] + Pr[A \ outputs \ 1 | b = 1] \leq 1 + 2 \cdot negl(n) = 1 + negl(n)$$
+
+Therefore,
+
+$$ | Pr[Out_A(PrivK^{eav}_{A, \pi} (n, 0)) = 1] - Pr[Out_A(PrivK^{eav}_{A, \pi} (n, 1)) = 1] | \\ = | Pr[A \ outputs \ 1 | b = 0] - Pr[A \ outputs \ 1 | b = 1] | \\ = | 1 - Pr[A \ outputs \ 0 | b = 0] - Pr[A \ outputs \ 1 | b = 1] | \\ = Pr[A \ outputs \ 0 | b = 0] + Pr[A \ outputs \ 1 | b = 1] - 1 \leq negl(n)$$
+
+<=
+
+$$| Pr[Out_A(PrivK^{eav}_{A, \pi} (n, 0)) = 1] - Pr[Out_A(PrivK^{eav}_{A, \pi} (n, 1)) = 1] | \\ = | Pr[A \ outputs \ 1 | b = 0] - Pr[A \ outputs \ 1 | b = 1] | \\ = | 1 - Pr[A \ outputs \ 0 | b = 0] - Pr[A \ outputs \ 1 | b = 1] | \leq negl(n)$$
+
+So,
+$$
+- negl(n) \leq 1 - Pr[A \ outputs \ 0 | b = 0] - Pr[A \ outputs \ 1 | b = 1] \leq negl(n)$$
+
+And then,
+
+$$\frac{1}{2} - negl(n) \leq \frac{1}{2} \cdot (Pr[A \ outputs \ 0| b = 0] + Pr[A \ outputs \ 1 | b = 1]) \leq \frac{1}{2} + negl(n)$$
+
+Therefore,
+
+$$Pr[PrivK^{eav}_{A, \pi} (n) = 1] \leq \frac{1}{2} + negl(n)$$
+
+### 3.5
+As $l(n) = 2n$, we simply construct an PPT algorithm that count whether the numbers of 1 and 0 in the $\{0, 1\}^{2n}$ string are even. If it is even, $D(w) = 1$, given $w \in \{0, 1\}^{2n}$.
+
+Apparently we have,
+
+$$Pr[D(G(s)) = 1] - Pr[D(r) = 1] = 1 - \frac{1}{2} = \frac{1}{2} > negl(n)$$
+
+### 3.6
+#### (a).
+Yes.
+
+
+$$ |Pr[D(G'(s)) = 1] - Pr[D(r) = 1] | = | Pr[D(G(\overline{s})) = 1] - Pr[D(r) = 1]| \\ 
+= |Pr[D(G(2^{n} - s)) = 1] - Pr[D(r) = 1]|$$
+
+As $\forall s \in \{0, 1\}^{n}$, $(2^{n} - s) \in \{0, 1\}^{n}$. By definition of pseudorandom generator of $G$, for every $t \in \{0, 1\}^{n}$, we have $|Pr[D(G(t)) = 1] - Pr[D(r) = 1]| \leq negl(n)$, which includes $(2^{n} - s) \in \{0, 1\}^{n}$. As there always exists a $t = (2^{n} - s)$, we have,
+
+$Pr[D(G(2^{n} - s)) = 1] - Pr[D(r) = 1] \leq negl(n)$, therefore,
+
+$$Pr[D(G'(s)) = 1] - Pr[D(r) = 1] \leq negl(n)$$
+
+#### (b).
+Yes.
+
+
+
+Since $D(w)$ can be every possible distinguisher, we can denote a new $D'(w) = \overline {D(w)}$ for every possible $D(w)$. 
+
+Without loss of the generality, $D'(w)$ can still represent every possible distinguisher. The only difference is that, for those $D(w) = 1$, $D'(w)$ will return 0, and $D(2^{l(n)}-w)$ will return 1.
+
+Therefore, 
+
+$$Pr[D'(G'(s)) = 1] = Pr[D'(2^{l(n)} - G(s)) = 1]$$
+
+$$Pr[D'(r)] = Pr[D(r)] = 2^{-l(n)}$$
+
+Therefore, 
+
+$$|Pr[D'(G'(s)) = 1] - Pr[D'(r) = 1]| = |Pr[D(G(s)) = 1] - Pr[D(r) = 1]| \leq negl(n)$$
+
+#### (c).
+No.
+
+We should construct a Distinguish Algorithm $D$ to prove that $G'(s)$ is not necessarily PRG. 
+
+$G'(s) = G(0^{|s|} || s)$, so as $G: \{0, 1\}^{n} \rightarrow \{0, 1\}^{l(n)}$, $G': \{0 ,1\}^{n} \rightarrow \{0, 1\}^{l(2n)}$.
+
+so,
+$|Pr[D(G'(s)) = 1] - Pr[D(r) = 1]|$ should select the mappings like $\{0 ,1\}^{n} \rightarrow \{0, 1\}^{l(2n)}$
+
+We construct a $D$ algorithm:
+- for every $x \in \{0,1\}^{l(2n)}$, if $\exist t \in \{0, 1\}^{n}, s.t. \ x = G(0^{|t|} || t)$, then $D(x) = 1$
+- else $D(x) = 0$
+
+Note that $|G(0^{|t|} || t)| = |\{0,1\}^{|t|}| = |\{0,1\}^{l(n)}| < |\{0,1\}^{l(2n)}|$, so there must exists a $x_{0} \in \{0 ,1\}^{l(2n)}$, and $\forall t \in \{0,1\}^{n}$, $G(0^{|t|} || t) \neq x$. So there must $\exist r \in \{0,1\}^{l(2n)}$ which makes $Pr[D(r) = 1] = 0$.
+
+So $Pr[D(G'(s)) = 1] = 1$, while the $Pr[D(r) = 1]$ can be 0, for $r \in \{0,1\}^{l(2n)}$. Therefore, $G'(x)$ is not PRG.
+
+#### (d).
+No.
+
+$Pr[D(G'(s))] = Pr[D(G(s) || G(s + 1))]$
+
+Since, $G'(s) = G(s) || G(s+1)$, therefore $G'(s): \{0, 1\}^{n} \rightarrow \{0, 1\}^{l(2n)}$.
+
+We still construct a $D$ algorithm:
+- for every $x \in \{0, 1\}^{l(2n)}$, if there $\exist t \in \{0 ,1\}^{l(n)}, s.t. \ G(t) || G(t + 1) = x$, then $D(x) = 1$
+- else $D(x) = 0$
+
+Note that $|G(s) || G(s + 1))| = |\{0, 1\}^{l(n)}| < |\{0, 1\}^{l(2n)}|$. Which means for $r \in \{0, 1\}^{l(2n)}$, for every $t \in \{0, 1\}^{n}, G(t) || G(t+1) \neq r$. So there must $\exist r \in \{0,1\}^{l(2n)}$ which makes $Pr[D(r) = 1] = 0$.
+
+However, as $Pr[D(G'(s)) = 1] = 1$, while $Pr[D(r) = 1]$ can be 0. Therefore, $G'(x)$ is not PRG.
+
+### 3.8
+We still use the Distinguisher $D$ like the text book, that is
+
+Distinguisher $D$:  
+$D$ is given as input a string $w \in \{0, 1\}^{l(n)}$.
+1. Run $A(1^{n})$ to obtain a pair of messages $m_0, m_1 \in \{0, 1\}^{l(n)}$.  
+2. Choose a uniform bit $b \in \{0, 1\}$. Set $c := w \oplus m_b$.  
+3. Give $c$ to $A$ and obtain output $b′$. Output 1 if $b′ = b$, and output 0 otherwise.
+
+when $w$ is generated by choosing uniform $r \in \{0, 1\}^{l(n)}$, then:
+
+$Pr_{k \leftarrow \{0, 1\}^{l(n)}} [D(G(k)) = 1] = Pr[PrivK^{eav}_{A, \overline \pi}(n) = 1] = \frac{1}{2}$
+
+When $w$ is generated by choosing uniform $k \in \{0, 1\}^{n}$ and then setting $w := G(k)$, then:
+
+$Pr_{k \leftarrow \{0, 1\}^{n}} [D(G(k)) = 1] = Pr[PrivK^{eav}_{A, \pi}(n) = 1]$
+
+Since $G$ is not PRG,
+
+$$|Pr_{k \leftarrow \{0, 1\}^{n}} [D(G(k)) = 1] - Pr_{k \leftarrow \{0, 1\}^{l(n)}} [D(G(k)) = 1]| > negl(n)$$
+
+Therefore,
+
+$$|Pr[PrivK^{eav}_{A, \pi}(n) = 1] - \frac{1}{2}| > negl(n)$$
+
+#### 3.9
+Consider a notion of indistinguishable encryption for multiple distinct messages, i.e., where a scheme need not hide whether the same message is encrypted twice.
+
+#### (a). Modify Definition 3.18 to obtain a suitable definition of the above.
+
+We give the definition below:
+
+The multiple distinct messages eavesdropping experiment $PrivK^{mult-distinct}_{A, \pi} (n)$:
+- The adversary $A$ is given input $1^n$, and outputs a pair of equal-length lists of messages $\vec M_{0} = (m_{0,1}, \cdots , m_{0,t})$ and $\vec M_{1} = (m_{1,1}, \cdots , m_{1,t})$, with $|m_{0,i}| = |m_{1,i}|$ for all $i$. Besides, $\forall i, j \in [1, t], \forall b \in \{0, 1\}, m_{b, i} \neq m_{b, j}$.
+- A key $k$ is generated by running $Gen(1^{n})$, and a uniform bit $b \in \{0, 1\}$ is chosen. For all $i$, the ciphertext $c_{i} ← Enc_{k}(m_{b,i})$ is computed and the list $\vec C = (c_1, \cdots , c_t)$ is given to A.
+- $A$ outputs a bit $b'$
+- The output of the experiment is defined to be 1 if $b′ = b$, and 0 otherwise.
+
+A private-key encryption scheme $\pi = (Gen, Enc, Dec)$ has indistinguishable multiple distinct encryptions in the presence of an eavesdropper if for all probabilistic polynomial-time adversaries A there is a negligible function negl such that:
+
+$$Pr[PrivK^{mult-distinct}_{A, \pi} (n)] \leq \frac{1}{2} + negl(n)$$
+
+
+#### (b) Show that Construction 3.17 does not satisfy your definition.  
+
+The key difference is that it uses deterministic encryption.
+
+$$c := G(k) \oplus m$$
+
+We assume the Adversary select $M_1 = (x, y), M_2 = (x, y')$, and $x \neq y, y\neq y', x \neq y'$, which obeys our definition.
+
+However, as $c$ is deteministic, if the $A$ gets $(c_1, c_2)$, then $c_1 \oplus c_2 = x \oplus y$, or $c_1 \oplus c_2 = x \oplus y'$.
+
+Therefore the $A$ can preprocess $x \oplus y$ and $x \oplus y'$ to judge $(c_1, c_2)$ is the ciphertext of $M_1$ or $M_2$.
+
+#### (c) Give a construction of a deterministic (stateless) encryption scheme that satisfies your definition.
+
+Usage of Pseudorandom Permutation will work.
