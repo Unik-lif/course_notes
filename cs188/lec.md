@@ -489,3 +489,24 @@ Taking an Action, decide which action is the best.
 - choose maximizing action
 
 （17：44）
+## Lec 18
+Hidden Markove Models
+
+进行了推导，感觉使用方式和应用方式都比较直接有用，但是我感觉好像并不是特别fancy？
+
+## Lec 20
+ML Algorithm
+- learn patterns between features and labels from data
+
+本质上是对数据进行标记，分类，学习
+
+一种简易的使用，由果溯因，naive bayes，但是这是一个后验证的方式，必须先得知道分布或者结果，才能去做分辨
+- 真实情况下，我们可能拿不到数据，在真正进行大考之前，我们无从知晓信息
+
+很有趣的结论
+- 除了training data和test data，还需要有一个介于中间的held-out data，作为随堂检测联系和反馈，用来避免用户在做实验时，尝试偷看test data。
+- never peek at the test set.
+
+How to smooth?
+- Laplace smoothing: pretend you saw every outcome k extra times.
+- 太阳似乎一直会升起，但是如果太阳有一天不升起？
