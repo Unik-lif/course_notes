@@ -80,3 +80,90 @@ GPT考虑了我没有考虑的东西，比如当前的Ghost状态和与自身的
 以这个为基础，去尝试对接下来的位置做更新
 
 和Q6的更新方式类似，其实是两种独立的，不同的beliefs更新方式
+
+## Proj5
+### Q1
+确实没有使用过torch来真正做这样的工作，总体来说，有一些有意思的细节
+
+torch用Parameter类型来表示需要进行gradient descent迭代的变量
+
+no_grad表示在运行这个函数前，不要默认地去迭代变量，这样能够节省很多内存上的开销
+```
+Question q1
+===========
+*** q1) check_perceptron
+Sanity checking perceptron...
+/home/link/Desktop/UCB-CS188/machinelearning/autograder.py:333: DeprecationWarning: __array__ implementation doesn't accept a copy keyword, so passing copy=False failed. __array__ must implement 'dtype' and 'copy' keyword arguments. To learn more, see the migration guide https://numpy.org/devdocs/numpy_2_0_migration_guide.html#adapting-to-changes-in-the-copy-keyword
+  expected_prediction = np.where(np.dot(point, p.get_weights().data.T) >= 0, 1, -1).item()
+Sanity checking perceptron weight updates...
+Sanity checking complete. Now training perceptron
+/home/link/Desktop/UCB-CS188/machinelearning/autograder.py:393: DeprecationWarning: __array__ implementation doesn't accept a copy keyword, so passing copy=False failed. __array__ must implement 'dtype' and 'copy' keyword arguments. To learn more, see the migration guide https://numpy.org/devdocs/numpy_2_0_migration_guide.html#adapting-to-changes-in-the-copy-keyword
+  accuracy = np.mean(np.where(np.dot(dataset.x, model.get_weights().data.T) >= 0.0, 1.0, -1.0) == dataset.y)
+*** PASS: check_perceptron
+
+### Question q1: 6/6 ###
+
+Finished at 12:26:56
+
+Provisional grades
+==================
+Question q1: 6/6
+------------------
+Total: 6/6
+```
+### Q2
+这好像我第一次自己尝试去写一个神经网络，并且用pytorch去做迭代和训练
+
+epoch跑了5000次就能达到很理想的结果，我们的结构也足够简单，说白了就是一层relu，两层线性，似乎这个东西可以利用Sequential来组织，不过我们这边在forward中把算式写好了，应该是一样的
+```python
+    def __init__(self):
+        # Initialize your model parameters here
+        # We first use one hidden layer.
+        "*** YOUR CODE HERE ***"
+        super().__init__()
+        self.batch_size = 64
+        self.lr = 0.001
+        self.linear_layer1 = Linear(1, 300)
+        self.linear_layer2 = Linear(300, 1)
+    def forward(self, x):
+        """
+        Runs the model for a batch of examples.
+
+        Inputs:
+            x: a node with shape (batch_size x 1)
+        Returns:
+            A node with shape (batch_size x 1) containing predicted y-values
+        """
+        "*** YOUR CODE HERE ***"
+        # pytorch will automatically adjust x, even when changing the size of the batch, the nn won't have to change.
+        mediate = relu(self.linear_layer1(x))
+        output = self.linear_layer2(mediate)
+        
+        return output
+```
+实验结果如下
+```
+(ml) link@public-Super-Server:~/Desktop/UCB-CS188/machinelearning$ python autograder.py -q q2 --no-graphics
+/home/link/Desktop/UCB-CS188/machinelearning/autograder.py:282: SyntaxWarning: "is" with a literal. Did you mean "=="?
+  assert all([(expected is '?' or actual == expected) for (actual, expected) in zip(node.detach().numpy().shape, expected_shape)]), (
+
+Question q2
+===========
+*** q2) check_regression
+Your final loss is: 0.000643
+*** PASS: check_regression
+
+### Question q2: 6/6 ###
+
+Finished at 12:28:26
+
+Provisional grades
+==================
+Question q2: 6/6
+------------------
+Total: 6/6
+
+Your grades are NOT yet registered.  To register your grades, make sure
+to follow your instructor's guidelines to receive credit on your project.
+```
+### Q3
