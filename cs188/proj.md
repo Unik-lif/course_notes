@@ -167,3 +167,51 @@ Your grades are NOT yet registered.  To register your grades, make sure
 to follow your instructor's guidelines to receive credit on your project.
 ```
 ### Q3
+情况一样，用两层线性结构多迭代几次就好，不需要上三层
+
+### Q4
+要尝试处理变长的input，这里就引入了RNN的概念来去做
+
+这里给了一些建议，首先先把最容易做的$f_{initial}(x)$结构做出来
+
+但是我踩了很久的坑！我并没有按照很标准的RNN的方式来布置我的神经网络结构，最后得到的效果几乎没有办法收敛
+- 模型的结构很重要，而且可能存在一些难以解释的地方，以及随机性，可能要比参数的设置要重要的多
+- 注释没有看，导致没有意识到batch这边的关联，这边是pytorch上的使用没有经验，我觉得有这个问题很正常
+- relu的使用似乎还是挺巧妙的，不是说随便拍脑袋使劲加层数就能搞定的，但是这个东西也非常不讲道理啊！
+
+```
+*** PASS: check_lang_id
+
+### Question q4: 7/7 ###
+
+Finished at 1:46:35
+
+Provisional grades
+==================
+Question q4: 7/7
+------------------
+Total: 7/7
+```
+### Q5
+CNN这个不是很难，不过tensordot的概念属实有点太绕了
+
+这边用的逻辑比较简单，直接全乘一遍就好了
+
+然后需要注意`forward`本质上和`run`是一个东西，`run`通过`self(x)`来对其进行调用
+
+最后得分结果为下面
+```
+Question q5
+===========
+
+### Question q5: 4/4 ###
+
+Finished at 0:26:14
+
+Provisional grades
+==================
+Question q5: 4/4
+------------------
+Total: 4/4
+```
+到这里我们应该有比较不错的人工智能基础了，接下来我们会快速通关cs230，然后开始正式进入深度学习内容的学习，再之后是大模型

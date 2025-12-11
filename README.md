@@ -15,9 +15,13 @@ I don't have much time spending on self-learning now, but I will take it simply 
 
 Courses I want to finish these days:
 - 6.824 [MIT]
-- cs188, cs162 [UCB]
-- cs220 [KAIST]
+- CS230/CS224n/CS231n [Stanford]
+- cs162 [UCB]: 随便看看不熟悉的部分得了，我已经很习惯去给Qemu Linux做修改了
+- cs380L [UTAustin]：经典paper，已经看了三分之一
+- SysI/II/III [ZJU]: 已购置FPGA，我需要业余飞快学习一下芯片设计，以把项目上板
 - ysyx [NJU/UCAS]
+
+但是我基本没有时间刷课了，当前科研的任务很艰巨，我需要一个人打通软硬件全栈，不过做这个项目的时候给了我超级大的信心，因为确实我渐渐感觉不是所有人有这个胆子完全一个人从硬件到软件的主流实现全部摸爬滚打做一遍的，包括Opensbi/Qemu/Linux/以及自己魔改的xv6/未来要学习并魔改的RocketChips，所以主要是摆烂的时候状态不好的时候做一下，平常debug的时候我会去刷paper，此处就不再记录
 
 Courses I've completely finished in my spare time: (not so much in fact, I should do my research)
 - 18.01/18.02/18.06 [MIT] 
@@ -34,6 +38,8 @@ Courses I've completely finished in my spare time: (not so much in fact, I shoul
 - - 相对来说比较标准，看代码和书籍收获很大，我也做了不少笔记
 - cs50-AI [Harvard]
 - - 真的是看论文纯摆烂的时候做的，一个项目做个一天就差不多了，但是很适合入门看起来
+- cs188 [UCB]
+- - 新版的ML部分对于pytorch和CNN等模型的介绍很精炼，做一个项目很快就能大体有一个感觉，配合这3Blue1Brown效果更好
 
 Books fully read and understood
 - OSTEP [UWM]
