@@ -174,3 +174,17 @@ helloworle
 90
 ```
 没有特别困难，做了大概几个小时就搞定了，不过真的挺好玩的，感觉自己调gdb有进步，而且arm的汇编对我来说确实是陌生的
+
+```
+root@2ef476682274:/OS-Course-Lab/Lab0# make grade
+Grading lab 0 ...(may take 10 seconds)
+===========================================
+Phase 1: 15/15
+Phase 2: 15/15
+Phase 3: 15/15
+Phase 4: 15/15
+Phase 5: 20/20
+All phases defused: 20/20
+Score: 100/100
+==========================================
+```
